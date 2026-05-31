@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>TVBox 接口管理系统 v3.0 - 稳定检测版</title>
+    <title>TVBox 接口管理系统 v3.0 · 点播/直播分类批量检测</title>
     <!-- AWS SDK v2 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1500.0/aws-sdk.min.js"></script>
     <style>
@@ -21,6 +21,8 @@
             --red: #da3633;
             --yellow: #d29922;
             --purple: #8957e5;
+            --vod-color: #2ea043;
+            --live-color: #f0883e;
         }
         body {
             background: var(--bg);
@@ -63,6 +65,8 @@
         .btn-green { background: var(--green); }
         .btn-red { background: var(--red); }
         .btn-purple { background: var(--purple); }
+        .btn-vod { background: #1e5e2d; border-left: 3px solid #3fb950; }
+        .btn-live { background: #a05c1a; border-left: 3px solid #f0883e; }
         .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
         .btn-ghost:hover { background: rgba(56, 139, 253, 0.1); color: #58a6ff; border-color: #58a6ff; }
 
@@ -88,7 +92,7 @@
             overflow: hidden;
         }
         th, td {
-            padding: 12px 10px;
+            padding: 12px 8px;
             text-align: left;
             border-bottom: 1px solid var(--border);
             font-size: 13px;
@@ -105,7 +109,7 @@
             word-break: break-all;
             text-decoration: none;
             display: inline-block;
-            max-width: 280px;
+            max-width: 260px;
         }
         .status-dot {
             display: inline-block;
@@ -141,52 +145,28 @@
             color: white;
         }
         .copy-btn { border-color: #2d6a4f; }
-        .copy-btn:hover { background: #2d6a4f; border-color: #2d6a4f; }
-        .check-single-btn { border-color: var(--purple); }
-        .check-single-btn:hover { background: var(--purple); }
-
-        /* 模态框 */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            width: 90%;
-            max-width: 450px;
-            background: var(--card-bg);
-            padding: 24px;
+        .copy-btn:hover { background: #2d6a4f; }
+        .type-select {
+            background: #0d1117;
+            color: white;
             border: 1px solid var(--border);
             border-radius: 16px;
-            box-shadow: 0 20px 35px rgba(0,0,0,0.5);
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 500;
         }
-        .overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.75);
-            z-index: 999;
-        }
-        .modal input, .modal textarea {
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            background: #010409;
-            border: 1px solid var(--border);
-            color: white;
-            border-radius: 6px;
-            box-sizing: border-box;
-        }
-        .badge {
-            background: #21262d;
-            padding: 2px 8px;
+        .type-select.vod { background: #1e3a2f; color: #7ee787; border-color: #2ea043; }
+        .type-select.live { background: #4a2e1a; color: #ffb347; border-color: #f0883e; }
+        .badge-type {
+            display: inline-block;
+            padding: 2px 10px;
             border-radius: 20px;
             font-size: 11px;
+            font-weight: 600;
         }
+        .badge-vod { background: #1e5e2d; color: #a5f0b6; }
+        .badge-live { background: #b45f1b; color: #ffe0b5; }
         .flex-between {
             display: flex;
             justify-content: space-between;
@@ -199,8 +179,9 @@
             text-align: center;
         }
         @media (max-width: 780px) {
-            th, td { font-size: 11px; padding: 8px 6px; }
-            .url-text { max-width: 180px; font-size: 10px; }
+            th, td { font-size: 11px; padding: 8px 4px; }
+            .url-text { max-width: 150px; font-size: 10px; }
+            .action-btn { padding: 3px 6px; }
         }
     </style>
 </head>
@@ -211,28 +192,33 @@
             <button class="btn-ghost" onclick="toggleModal('settingsModal')">⚙️ R2 配置</button>
             <button class="btn-green" onclick="syncToR2()">⬆️ 上传云端</button>
             <button class="btn-purple" onclick="syncFromR2()">⬇️ 下载云端</button>
-            <button class="btn-blue" onclick="checkAll()">⚡ 批量检测 (全部)</button>
+            <button class="btn-vod" onclick="refreshByType('vod')">🎬 批量刷新点播源</button>
+            <button class="btn-live" onclick="refreshByType('live')">📺 批量刷新直播源</button>
+            <button class="btn-ghost" onclick="setAllType('vod')">🏷️ 全设为点播</button>
+            <button class="btn-ghost" onclick="setAllType('live')">🏷️ 全设为直播</button>
             <button class="btn-red" onclick="clearAll()">🗑️ 清空所有</button>
         </div>
-        <textarea id="urlInput" placeholder="批量导入接口地址 (每行一个 URL)&#10;支持 http/https，系统会自动通过代理检测，不再出现混合内容报错"></textarea>
-        <button class="btn-blue" onclick="importURLs()">📥 智能导入 (自动去重)</button>
-        <p class="warning-text">✅ 优化说明：全量请求通过稳定CORS代理检测，真实获取HTTP状态码，不再误报；每个接口支持单独检测 + 一键复制链接。</p>
+        <textarea id="urlInput" placeholder="批量导入接口地址 (每行一个 URL)&#10;导入后默认为「点播」类型，可手动修改标签"></textarea>
+        <div class="btn-group" style="margin-top: 0;">
+            <button class="btn-blue" onclick="importURLs()">📥 智能导入 (自动去重)</button>
+        </div>
+        <p class="warning-text">✅ 标签功能：每个接口可单独标记「点播」或「直播」| 批量刷新按钮仅检测对应类型接口 | 支持单独检测/复制链接</p>
     </div>
 
     <div style="overflow-x: auto;">
         <table id="sourceTable">
             <thead>
-                <tr><th>#</th><th>名称</th><th>接口地址</th><th>延迟/状态</th><th width="150">操作</th></tr>
+                <tr><th width="40">#</th><th width="140">名称</th><th>接口地址</th><th width="70">类型</th><th width="90">延迟/状态</th><th width="150">操作</th></tr>
             </thead>
             <tbody id="tableBody">
-                <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
             </tbody>
         </table>
     </div>
-    <footer>⚡ 检测使用多代理轮询 (corsproxy.io / allorigins 等) | 延迟为真实响应时间 | 支持云端备份</footer>
+    <footer>🔍 检测使用多代理轮询 (corsproxy/allorigins等) 真实读取状态 | 支持R2备份 | 点击标签下拉可即时修改接口类型</footer>
 </div>
 
-<!-- R2 设置模态框 -->
+<!-- R2 模态框 -->
 <div class="overlay" id="overlay" onclick="closeAllModals()"></div>
 <div class="modal" id="settingsModal">
     <h3>🔐 Cloudflare R2 设置</h3>
@@ -243,21 +229,41 @@
     <button class="btn-green" style="width:100%" onclick="saveSettings()">保存配置</button>
 </div>
 
-<!-- 编辑接口 -->
+<!-- 编辑模态框 (增加类型选择) -->
 <div class="modal" id="editModal">
     <h3>✏️ 编辑接口</h3>
     <input type="hidden" id="editIndex">
     <input type="text" id="editName" placeholder="接口名称">
     <input type="text" id="editUrl" placeholder="完整 URL (http/https)">
-    <button class="btn-blue" style="width:100%" onclick="submitEdit()">确认修改</button>
+    <label style="font-size:13px; margin-top:8px; display:block;">接口类型：</label>
+    <select id="editType" style="width:100%; background:#010409; border:1px solid var(--border); color:white; padding:8px; border-radius:6px;">
+        <option value="vod">📽️ 点播源 (VOD)</option>
+        <option value="live">📡 直播源 (Live)</option>
+    </select>
+    <button class="btn-blue" style="width:100%; margin-top:15px;" onclick="submitEdit()">确认修改</button>
 </div>
 
 <script>
-    // ---------- 全局数据 ----------
+    // ---------- 数据结构 ----------
     let sources = JSON.parse(localStorage.getItem('tvbox_sources') || '[]');
     let r2Config = JSON.parse(localStorage.getItem('r2_config') || '{}');
 
-    // ---------- 稳定的 CORS 代理列表 (真实返回状态码) ----------
+    // 兼容旧数据，增加type字段，默认为'vod'
+    function normalizeSources() {
+        let changed = false;
+        for (let i = 0; i < sources.length; i++) {
+            if (!sources[i].type) {
+                sources[i].type = 'vod';
+                changed = true;
+            }
+            if (sources[i].status === undefined) sources[i].status = 'wait';
+            if (sources[i].latency === undefined) sources[i].latency = null;
+        }
+        if (changed) saveAndRender();
+        else renderTable();
+    }
+
+    // ---------- 代理列表 (稳定CORS) ----------
     const PROXY_LIST = [
         { name: 'corsproxy', url: (target) => `https://corsproxy.io/?${encodeURIComponent(target)}` },
         { name: 'allorigins', url: (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}` },
@@ -265,26 +271,11 @@
         { name: 'thingproxy', url: (target) => `https://thingproxy.freeboard.io/fetch/${target}` }
     ];
 
-    // 辅助: HTML 转义 (防止XSS)
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
-            return c;
-        });
-    }
-
-    // ---------- 核心检测: 单个接口通过代理获取真实状态码 (忽略no-cors坑) ----------
+    // 核心检测函数 (返回 {online, latency})
     async function testSingleUrl(targetUrl, timeoutMs = 7000) {
-        // 空url直接离线
         if (!targetUrl || !targetUrl.startsWith('http')) {
-            return { online: false, latency: 9999, error: 'invalid url' };
+            return { online: false, latency: 9999 };
         }
-        // 尝试每个代理，只要有一个成功且响应状态2xx即视为在线
         for (const proxy of PROXY_LIST) {
             const proxyUrl = proxy.url(targetUrl);
             const start = Date.now();
@@ -293,112 +284,128 @@
                 const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
                 const response = await fetch(proxyUrl, {
                     method: 'GET',
-                    mode: 'cors',        // 关键: 需要读取响应状态码
+                    mode: 'cors',
                     cache: 'no-store',
                     signal: controller.signal,
                     headers: { 'Accept': 'application/json, text/plain, */*' }
                 });
                 clearTimeout(timeoutId);
                 const latency = Date.now() - start;
-                // 请求成功且HTTP状态码为2xx 或 304 视为有效接口
                 if (response.ok || response.status === 304) {
                     return { online: true, latency: Math.min(latency, 5000) };
                 }
-                // 针对 allorigins 特殊处理: 它始终返回200但内容可能包含"error"，但因为检测可达性为主，忽略深内容，保守采用状态码即可
-                // 如果响应状态非2xx, 继续尝试下一个代理
-                console.warn(`代理 ${proxy.name} 返回状态 ${response.status}, 继续尝试`);
             } catch (err) {
-                console.debug(`代理 ${proxy.name} 失败: ${err.message}`);
-                // 继续下一个代理
+                // 继续尝试下一个代理
             }
         }
-        // 所有代理都失败 -> 离线
         return { online: false, latency: 9999 };
     }
 
-    // ---------- 批量检测 (顺序执行, 实时更新UI，支持跳过失败继续) ----------
-    async function checkAll() {
-        if (sources.length === 0) {
-            alert('暂无接口，请先导入');
+    // 按类型批量刷新 (vod / live)
+    async function refreshByType(type) {
+        const targetIndices = [];
+        for (let i = 0; i < sources.length; i++) {
+            if (sources[i].type === type) {
+                targetIndices.push(i);
+            }
+        }
+        if (targetIndices.length === 0) {
+            alert(`当前没有「${type === 'vod' ? '点播' : '直播'}」类型的接口，请先添加或修改标签。`);
             return;
         }
-        // 将所有接口状态置为检测中
-        for (let i = 0; i < sources.length; i++) {
-            sources[i].status = 'checking';
-            sources[i].latency = null;
+        // 将这些接口状态置为检测中
+        for (let idx of targetIndices) {
+            sources[idx].status = 'checking';
+            sources[idx].latency = null;
         }
         renderTable();
 
-        for (let i = 0; i < sources.length; i++) {
-            const item = sources[i];
-            item.status = 'checking';
-            renderTable(); // 实时刷新状态
-
+        for (let idx of targetIndices) {
+            const item = sources[idx];
             const result = await testSingleUrl(item.url, 6000);
             item.status = result.online ? 'online' : 'offline';
             item.latency = result.online ? result.latency : null;
-            renderTable(); // 更新当前行
-            // 短暂延迟避免请求太密集
-            await new Promise(r => setTimeout(r, 150));
+            renderTable(); // 实时刷新
+            await new Promise(r => setTimeout(r, 120));
         }
-        // 全部检测完成后按照延迟排序 (在线优先，在线内按延迟升序，离线排最后)
-        sources.sort((a, b) => {
-            if (a.status === 'online' && b.status !== 'online') return -1;
-            if (a.status !== 'online' && b.status === 'online') return 1;
-            if (a.status === 'online' && b.status === 'online') return (a.latency || 9999) - (b.latency || 9999);
-            return 0;
-        });
+        // 整体排序 (在线优先 + 延迟升序)
+        sortAllByOnlineAndLatency();
         saveAndRender();
-        const onlineCount = sources.filter(s => s.status === 'online').length;
-        alert(`检测完成！在线: ${onlineCount} / 总数: ${sources.length}`);
+        const onlineCount = sources.filter(s => s.type === type && s.status === 'online').length;
+        alert(`「${type === 'vod' ? '点播' : '直播'}」源刷新完成！在线: ${onlineCount} / 总数: ${targetIndices.length}`);
     }
 
-    // ---------- 单独检测某个索引 ----------
+    // 全局排序 (在线优先，在线按延迟升序，离线排后)
+    function sortAllByOnlineAndLatency() {
+        sources.sort((a, b) => {
+            const aOnline = a.status === 'online';
+            const bOnline = b.status === 'online';
+            if (aOnline && !bOnline) return -1;
+            if (!aOnline && bOnline) return 1;
+            if (aOnline && bOnline) return (a.latency || 9999) - (b.latency || 9999);
+            return 0;
+        });
+    }
+
+    // 单独检测某个接口
     async function checkSingle(index) {
         if (!sources[index]) return;
         const item = sources[index];
-        // 设置检测中状态
         item.status = 'checking';
         item.latency = null;
         renderTable();
-
         const result = await testSingleUrl(item.url, 6000);
         item.status = result.online ? 'online' : 'offline';
         item.latency = result.online ? result.latency : null;
         saveAndRender();
-        // 弹出简短反馈
-        const msg = result.online ? `✅ 在线 | 延迟 ${result.latency}ms` : `❌ 离线或不可达 (代理均失败)`;
-        alert(`接口: ${item.name}\n${msg}`);
+        alert(`接口: ${item.name}\n${result.online ? `✅ 在线 | 延迟 ${result.latency}ms` : '❌ 离线或不可达'}`);
     }
 
-    // ---------- 复制链接 ----------
+    // 复制URL
     async function copyUrl(url) {
         try {
             await navigator.clipboard.writeText(url);
-            alert('✅ 已复制接口地址到剪贴板');
-        } catch (err) {
-            // fallback
+            alert('✅ 已复制接口地址');
+        } catch {
             const textarea = document.createElement('textarea');
             textarea.value = url;
             document.body.appendChild(textarea);
             textarea.select();
             document.execCommand('copy');
             document.body.removeChild(textarea);
-            alert('✅ 已复制 (兼容模式)');
+            alert('✅ 已复制');
         }
     }
 
-    // ---------- 导入URL (智能去重: name 和 url 都不能重复) ----------
+    // 更新接口类型 (即时修改)
+    function updateType(index, newType) {
+        if (index >= 0 && index < sources.length && (newType === 'vod' || newType === 'live')) {
+            sources[index].type = newType;
+            saveAndRender();
+        }
+    }
+
+    // 全量设置所有接口类型
+    function setAllType(type) {
+        if (sources.length === 0) return alert('暂无接口');
+        if (confirm(`将所有接口的类型设置为「${type === 'vod' ? '点播' : '直播'}」吗？`)) {
+            for (let i = 0; i < sources.length; i++) {
+                sources[i].type = type;
+            }
+            saveAndRender();
+            alert(`已将所有接口设为 ${type === 'vod' ? '点播' : '直播'}`);
+        }
+    }
+
+    // ---------- 导入 (默认type: vod) ----------
     function importURLs() {
         const val = document.getElementById('urlInput').value.trim();
         if (!val) return;
         const lines = val.split(/\r?\n/);
-        let addedCount = 0;
-        let skipCount = 0;
+        let addedCount = 0, skipCount = 0;
         for (const line of lines) {
             let url = line.trim();
             if (!url.startsWith('http')) continue;
-            // 生成默认名称: 从url提取域名或最后路径
             let name = '';
             try {
                 const urlObj = new URL(url);
@@ -407,42 +414,40 @@
             } catch(e) {
                 name = '未知接口';
             }
-            // 防止名称过长
             if (name.length > 30) name = name.substring(0, 28) + '..';
-            // 查重 (网址严格唯一, 名称也不能重复)
-            const isUrlExist = sources.some(s => s.url === url);
-            const isNameExist = sources.some(s => s.name === name);
-            if (isUrlExist) {
+            // 查重网址唯一
+            if (sources.some(s => s.url === url)) {
                 skipCount++;
                 continue;
             }
-            if (isNameExist) {
-                // 如果名称重复则添加随机后缀
-                let newName = name + '_' + Math.floor(Math.random() * 1000);
-                while (sources.some(s => s.name === newName)) {
-                    newName = name + '_' + Math.floor(Math.random() * 10000);
-                }
-                name = newName;
+            // 名称重复加后缀
+            let finalName = name;
+            let counter = 1;
+            while (sources.some(s => s.name === finalName)) {
+                finalName = name + '_' + counter++;
             }
             sources.push({
-                name: name,
+                name: finalName,
                 url: url,
+                type: 'vod',      // 默认点播
                 status: 'wait',
                 latency: null
             });
             addedCount++;
         }
-        if (addedCount === 0 && skipCount > 0) alert(`已跳过 ${skipCount} 条重复网址/名称`);
-        else if (addedCount > 0) alert(`成功导入 ${addedCount} 个接口，跳过 ${skipCount} 个重复项`);
+        if (addedCount === 0 && skipCount > 0) alert(`已跳过 ${skipCount} 条重复网址`);
+        else alert(`成功导入 ${addedCount} 个接口 (默认点播)，跳过 ${skipCount} 个重复项`);
         document.getElementById('urlInput').value = '';
         saveAndRender();
     }
 
-    // ---------- 编辑 & 查重 ----------
+    // 编辑相关
     function openEditModal(index) {
+        const item = sources[index];
         document.getElementById('editIndex').value = index;
-        document.getElementById('editName').value = sources[index].name;
-        document.getElementById('editUrl').value = sources[index].url;
+        document.getElementById('editName').value = item.name;
+        document.getElementById('editUrl').value = item.url;
+        document.getElementById('editType').value = item.type;
         toggleModal('editModal');
     }
 
@@ -450,6 +455,7 @@
         const index = parseInt(document.getElementById('editIndex').value);
         let newName = document.getElementById('editName').value.trim();
         let newUrl = document.getElementById('editUrl').value.trim();
+        let newType = document.getElementById('editType').value;
         if (!newName || !newUrl) {
             alert('名称和URL不能为空');
             return;
@@ -459,19 +465,17 @@
             return;
         }
         // 查重 (排除自身)
-        const duplicateUrl = sources.some((item, idx) => idx !== index && item.url === newUrl);
-        if (duplicateUrl) {
+        if (sources.some((item, idx) => idx !== index && item.url === newUrl)) {
             alert('该网址已存在，请勿重复添加');
             return;
         }
-        const duplicateName = sources.some((item, idx) => idx !== index && item.name === newName);
-        if (duplicateName) {
+        if (sources.some((item, idx) => idx !== index && item.name === newName)) {
             alert('该名称已存在，请修改名称');
             return;
         }
         sources[index].name = newName;
         sources[index].url = newUrl;
-        // 编辑后重置状态 (等待下次检测)
+        sources[index].type = newType;
         sources[index].status = 'wait';
         sources[index].latency = null;
         closeAllModals();
@@ -492,7 +496,7 @@
         }
     }
 
-    // ---------- R2 同步 (AWS SDK v2 修复版) ----------
+    // ----- R2 同步 (保持不变) -----
     function getS3() {
         if (!r2Config.accessKeyId || !r2Config.endpoint || !r2Config.bucket) return null;
         return new AWS.S3({
@@ -500,14 +504,13 @@
             accessKeyId: r2Config.accessKeyId,
             secretAccessKey: r2Config.secretAccessKey,
             signatureVersion: 'v4',
-            region: 'auto',
-            s3ForcePathStyle: false
+            region: 'auto'
         });
     }
 
     async function syncToR2() {
         const s3 = getS3();
-        if (!s3) return alert('请先填写完整的 R2 配置 (端点/密钥/bucket)');
+        if (!s3) return alert('请先填写完整的 R2 配置');
         try {
             await s3.putObject({
                 Bucket: r2Config.bucket,
@@ -515,10 +518,9 @@
                 Body: JSON.stringify(sources, null, 2),
                 ContentType: "application/json"
             }).promise();
-            alert('✅ 数据已上传至 R2 (tvbox_data.json)');
+            alert('✅ 数据已上传至 R2');
         } catch (e) {
-            alert('❌ 上传失败: ' + (e.message || '未知错误'));
-            console.error(e);
+            alert('❌ 上传失败: ' + e.message);
         }
     }
 
@@ -530,21 +532,22 @@
             const remoteData = JSON.parse(new TextDecoder().decode(data.Body));
             if (Array.isArray(remoteData)) {
                 sources = remoteData;
+                normalizeSources(); // 确保type字段存在并保存
                 saveAndRender();
-                alert('✅ 从云端下载成功，已覆盖本地数据');
+                alert('✅ 从云端下载成功');
             } else {
                 alert('云端数据格式错误');
             }
         } catch (e) {
-            alert('❌ 下载失败: ' + (e.message || '文件不存在或网络错误'));
+            alert('❌ 下载失败: ' + (e.message || '文件不存在'));
         }
     }
 
-    // ---------- UI 渲染 (含单独检测+复制按钮) ----------
+    // ---------- 渲染表格 (增加类型下拉列) ----------
     function renderTable() {
         const tbody = document.getElementById('tableBody');
         if (!sources.length) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">暂无接口，请从上方导入或同步云端</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px;">暂无接口，请从上方导入或同步云端</td></tr>';
             return;
         }
         tbody.innerHTML = sources.map((item, idx) => {
@@ -562,18 +565,24 @@
                 statusClass = '';
             } else {
                 statusText = '待检测';
-                statusClass = '';
             }
             const dotColor = item.status === 'online' ? '#3fb950' : (item.status === 'checking' ? '#d29922' : '#f85149');
-            // 安全显示
+            const typeValue = item.type === 'live' ? 'live' : 'vod';
+            const typeLabel = typeValue === 'vod' ? '📽️ 点播' : '📡 直播';
+            const typeClass = typeValue === 'vod' ? 'type-select vod' : 'type-select live';
+            // 安全转义
             const safeName = escapeHtml(item.name);
             const safeUrl = escapeHtml(item.url);
             return `
             <tr>
-                <td style="font-weight:500;">${idx+1}</td>
-                <td><strong>${safeName}</strong>${isHttp ? '<div class="warning-text">⚠️ HTTP源(代理检测无混合内容)</div>' : ''}</td>
+                <td>${idx+1}</td>
+                <td><strong>${safeName}</strong>${isHttp ? '<div class="warning-text">⚠️ HTTP源</div>' : ''}</td>
+                <td><a class="url-text" href="${item.url}" target="_blank" rel="noopener noreferrer" title="${safeUrl}">${safeUrl.length > 60 ? safeUrl.substring(0, 55)+'...' : safeUrl}</a></td>
                 <td>
-                    <a class="url-text" href="${item.url}" target="_blank" rel="noopener noreferrer" title="${safeUrl}">${safeUrl.length > 60 ? safeUrl.substring(0, 55)+'...' : safeUrl}</a>
+                    <select class="${typeClass}" onchange="updateType(${idx}, this.value)" style="background:${typeValue === 'vod' ? '#1e3a2f' : '#4a2e1a'}">
+                        <option value="vod" ${typeValue === 'vod' ? 'selected' : ''}>📽️ 点播</option>
+                        <option value="live" ${typeValue === 'live' ? 'selected' : ''}>📡 直播</option>
+                    </select>
                 </td>
                 <td class="${statusClass}">
                     <span class="status-dot" style="background:${dotColor}"></span>
@@ -581,8 +590,8 @@
                 </td>
                 <td>
                     <div class="action-buttons">
-                        <button class="action-btn check-single-btn" onclick="checkSingle(${idx})" title="单独检测此接口">🔍 检测</button>
-                        <button class="action-btn copy-btn" onclick="copyUrl('${safeUrl.replace(/'/g, "\\'")}')" title="复制接口地址">📋 复制</button>
+                        <button class="action-btn check-single-btn" onclick="checkSingle(${idx})" title="单独检测">🔍 检测</button>
+                        <button class="action-btn copy-btn" onclick="copyUrl('${safeUrl.replace(/'/g, "\\'")}')" title="复制链接">📋 复制</button>
                         <button class="action-btn" onclick="openEditModal(${idx})" title="编辑">✏️ 编辑</button>
                         <button class="action-btn" style="border-color:#da3633;" onclick="deleteSource(${idx})" title="删除">🗑️ 删除</button>
                     </div>
@@ -591,12 +600,22 @@
         }).join('');
     }
 
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
     function saveAndRender() {
         localStorage.setItem('tvbox_sources', JSON.stringify(sources));
         renderTable();
     }
 
-    // ---------- 设置相关 ----------
+    // 配置模态框
     function saveSettings() {
         const endpoint = document.getElementById('r2_endpoint').value.trim();
         const accessKeyId = document.getElementById('r2_accessKeyId').value.trim();
@@ -621,7 +640,6 @@
         document.getElementById('overlay').style.display = 'none';
     }
 
-    // 初始化加载设置到输入框
     function initSettingsForm() {
         if (r2Config.endpoint) {
             document.getElementById('r2_endpoint').value = r2Config.endpoint;
@@ -631,9 +649,11 @@
         }
     }
 
-    // 兼容全局函数调用 (挂载到window)
-    window.checkAll = checkAll;
+    // 全局挂载
+    window.refreshByType = refreshByType;
     window.checkSingle = checkSingle;
+    window.updateType = updateType;
+    window.setAllType = setAllType;
     window.copyUrl = copyUrl;
     window.importURLs = importURLs;
     window.openEditModal = openEditModal;
@@ -646,16 +666,9 @@
     window.toggleModal = toggleModal;
     window.closeAllModals = closeAllModals;
 
-    // 启动渲染
+    // 启动
     initSettingsForm();
-    // 若旧数据没有status字段则统一置为wait
-    let needSave = false;
-    for (let s of sources) {
-        if (!s.status) { s.status = 'wait'; needSave = true; }
-        if (s.latency === undefined) s.latency = null;
-    }
-    if (needSave) saveAndRender();
-    else renderTable();
+    normalizeSources();  // 补全type/status并渲染
 </script>
 </body>
 </html>
