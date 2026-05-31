@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>TVBox 接口管理系统 · 点播/直播分类检测增强版</title>
+    <title>TVBox 接口管理系统 · 极速并行检测版</title>
     <!-- AWS SDK v2 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1500.0/aws-sdk.min.js"></script>
     <style>
@@ -35,7 +35,7 @@
             max-width: 1400px;
             margin: 0 auto;
         }
-        /* 新布局：双栏卡片 */
+        /* 双栏卡片布局 */
         .settings-panel {
             display: flex;
             flex-wrap: wrap;
@@ -242,7 +242,7 @@
 </head>
 <body>
 <div class="container">
-    <!-- 双栏配置区: R2 + 批量操作 -->
+    <!-- 双栏配置区 -->
     <div class="settings-panel">
         <div class="card">
             <h3>☁️ Cloudflare R2 同步</h3>
@@ -261,7 +261,7 @@
             </div>
         </div>
         <div class="card">
-            <h3>⚡ 批量检测 (按标签)</h3>
+            <h3>⚡ 批量检测 (并行加速)</h3>
             <div class="btn-group">
                 <button class="btn-vod" onclick="refreshByType('vod')">🎬 批量刷新点播源</button>
                 <button class="btn-live" onclick="refreshByType('live')">📺 批量刷新直播源</button>
@@ -269,6 +269,7 @@
                 <button class="btn-ghost" onclick="setAllType('live')">🏷️ 全设为直播</button>
                 <button class="btn-red" onclick="clearAll()">🗑️ 清空所有</button>
             </div>
+            <p class="warning-text" style="margin-top:8px; font-size:11px;">🚀 并行检测 (最大并发6) 速度提升数倍，实时更新状态</p>
         </div>
     </div>
 
@@ -278,7 +279,7 @@
         <div class="btn-group">
             <button class="btn-blue" onclick="importURLs()">📥 智能导入 (自动去重)</button>
         </div>
-        <p class="warning-text">✅ 直播源优化检测：使用多代理 + 宽松状态码判定 (200~399)，大幅降低误报离线。</p>
+        <p class="warning-text">✅ 直播源检测优化：超时延长至10秒，状态码200~399均视为在线</p>
     </div>
 
     <!-- 接口列表 -->
@@ -290,10 +291,10 @@
             <tbody id="tableBody"><tr><td colspan="6" style="text-align:center;">加载中...</td></tr></tbody>
         </table>
     </div>
-    <footer>🔍 检测采用4个稳定CORS代理，直播源判定更宽容 (HTTP 200/206/304等均视为在线) | 点击类型下拉可即时切换点播/直播</footer>
+    <footer>🔍 并行检测：同时最多检测6个接口，每个接口独立代理轮询，检测完成后立即排序</footer>
 </div>
 
-<!-- R2 配置保存弹窗 (简化版直接保存, 但保留可视化) -->
+<!-- R2 配置弹窗 -->
 <div class="overlay" id="overlay" onclick="closeAllModals()"></div>
 <div class="modal" id="settingsModal">
     <h3>🔐 保存 R2 配置</h3>
@@ -335,105 +336,141 @@
         else renderTable();
     }
 
-    // ---------- 增强版代理池 (更稳定) ----------
+    // ---------- 增强版代理池 ----------
     const PROXY_LIST = [
-        { name: 'allorigins', url: (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`, retry: true },
-        { name: 'corsproxy', url: (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`, retry: true },
-        { name: 'cors-anywhere', url: (target) => `https://cors-anywhere.herokuapp.com/${target}`, retry: false },
-        { name: 'thingproxy', url: (target) => `https://thingproxy.freeboard.io/fetch/${target}`, retry: false }
+        { name: 'allorigins', url: (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}` },
+        { name: 'corsproxy', url: (target) => `https://corsproxy.io/?${encodeURIComponent(target)}` },
+        { name: 'cors-anywhere', url: (target) => `https://cors-anywhere.herokuapp.com/${target}` },
+        { name: 'thingproxy', url: (target) => `https://thingproxy.freeboard.io/fetch/${target}` }
     ];
 
     /**
-     * 智能检测接口 (针对直播源优化)
+     * 检测单个接口 (使用代理)
      * @param {string} targetUrl 
-     * @param {string} type   'vod' 或 'live'
+     * @param {string} type 'vod' or 'live'
      * @returns {Promise<{online: boolean, latency: number}>}
      */
-    async function testSingleUrlAdvanced(targetUrl, type, timeoutMs = 8000) {
+    async function testSingleUrlAdvanced(targetUrl, type) {
         if (!targetUrl || !targetUrl.startsWith('http')) {
             return { online: false, latency: 9999 };
         }
-        // 直播源使用更长超时和更宽松判断
-        const effectiveTimeout = (type === 'live') ? 10000 : 7000;
-        // 尝试每个代理
-        for (let proxy of PROXY_LIST) {
+        const timeout = (type === 'live') ? 10000 : 7000;
+        // 遍历代理
+        for (const proxy of PROXY_LIST) {
             const proxyUrl = proxy.url(targetUrl);
             const start = Date.now();
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
                 const response = await fetch(proxyUrl, {
                     method: 'GET',
                     mode: 'cors',
                     cache: 'no-store',
                     signal: controller.signal,
-                    headers: { 'Accept': '*/*' }   // 接受任何内容
+                    headers: { 'Accept': '*/*' }
                 });
                 clearTimeout(timeoutId);
                 const latency = Date.now() - start;
-                // 关键优化：直播源允许 200, 206, 304 等所有2xx/3xx状态码
                 if (response.status >= 200 && response.status < 400) {
                     return { online: true, latency: Math.min(latency, 5000) };
                 }
-                // 对于直播源特别宽容：如果状态码是 403/530 但代理错误, 尝试下一个
-                console.warn(`代理${proxy.name}返回${response.status}, 继续`);
             } catch (err) {
-                console.debug(`代理${proxy.name}失败:`, err.message);
-                // 继续尝试下一个代理
+                // 继续下一个代理
             }
-            // 可选: 短暂延迟避免高频
-            await new Promise(r => setTimeout(r, 80));
         }
-        // 所有代理都失败 -> 离线
         return { online: false, latency: 9999 };
     }
 
-    // 按类型批量刷新
-    async function refreshByType(type) {
-        const targetIndices = [];
+    // ---------- 并行批量检测 (核心优化) ----------
+    /**
+     * 并行刷新指定类型的接口，控制并发数
+     * @param {string} type 'vod' 或 'live'
+     * @param {number} concurrency 最大并发数 (默认6)
+     */
+    async function refreshByType(type, concurrency = 6) {
+        // 收集需要检测的索引
+        const indices = [];
         for (let i = 0; i < sources.length; i++) {
-            if (sources[i].type === type) targetIndices.push(i);
+            if (sources[i].type === type) {
+                indices.push(i);
+            }
         }
-        if (targetIndices.length === 0) {
+        if (indices.length === 0) {
             alert(`当前没有「${type === 'vod' ? '点播' : '直播'}」类型的接口`);
             return;
         }
-        for (let idx of targetIndices) {
+
+        // 设置所有待检测接口状态为 checking
+        for (let idx of indices) {
             sources[idx].status = 'checking';
             sources[idx].latency = null;
         }
         renderTable();
 
-        for (let idx of targetIndices) {
+        let completed = 0;
+        const total = indices.length;
+
+        // 并发控制: 使用 promise 队列
+        const results = new Array(total);
+        let nextIndex = 0; // 指向 indices 中的下一个任务
+
+        // 执行单个检测任务的函数
+        const runTask = async (taskId) => {
+            const idx = indices[taskId];
             const item = sources[idx];
-            const result = await testSingleUrlAdvanced(item.url, item.type, item.type === 'live' ? 10000 : 7000);
-            item.status = result.online ? 'online' : 'offline';
-            item.latency = result.online ? result.latency : null;
+            const result = await testSingleUrlAdvanced(item.url, item.type);
+            // 更新数据
+            sources[idx].status = result.online ? 'online' : 'offline';
+            sources[idx].latency = result.online ? result.latency : null;
+            // 实时更新界面
             renderTable();
-            await new Promise(r => setTimeout(r, 120));
+            completed++;
+            // 继续取下一个任务 (如果还有)
+            if (nextIndex < total) {
+                const nextTaskId = nextIndex++;
+                await runTask(nextTaskId);
+            }
+        };
+
+        // 启动并发任务 (最多 concurrency 个)
+        const starters = Math.min(concurrency, total);
+        for (let i = 0; i < starters; i++) {
+            const taskId = nextIndex++;
+            runTask(taskId).catch(err => console.error(err));
         }
-        // 排序
-        sources.sort((a,b) => {
-            const aOn = a.status === 'online';
-            const bOn = b.status === 'online';
-            if(aOn && !bOn) return -1;
-            if(!aOn && bOn) return 1;
-            if(aOn && bOn) return (a.latency||9999) - (b.latency||9999);
+
+        // 等待所有任务完成 (通过轮询)
+        await new Promise(resolve => {
+            const interval = setInterval(() => {
+                if (completed >= total) {
+                    clearInterval(interval);
+                    resolve();
+                }
+            }, 100);
+        });
+
+        // 全部完成后排序: 在线优先，在线按延迟升序
+        sources.sort((a, b) => {
+            const aOnline = a.status === 'online';
+            const bOnline = b.status === 'online';
+            if (aOnline && !bOnline) return -1;
+            if (!aOnline && bOnline) return 1;
+            if (aOnline && bOnline) return (a.latency || 9999) - (b.latency || 9999);
             return 0;
         });
         saveAndRender();
         const onlineCount = sources.filter(s => s.type === type && s.status === 'online').length;
-        alert(`「${type === 'vod' ? '点播' : '直播'}」检测完成！在线: ${onlineCount} / 总数: ${targetIndices.length}`);
+        alert(`「${type === 'vod' ? '点播' : '直播'}」检测完成！在线: ${onlineCount} / 总数: ${total} (并行${concurrency}任务)`);
     }
 
-    // 单独检测（也使用优化版）
+    // 单独检测 (保持串行无影响)
     async function checkSingle(index) {
         if (!sources[index]) return;
         const item = sources[index];
         item.status = 'checking';
         item.latency = null;
         renderTable();
-        const result = await testSingleUrlAdvanced(item.url, item.type, item.type === 'live' ? 10000 : 7000);
+        const result = await testSingleUrlAdvanced(item.url, item.type);
         item.status = result.online ? 'online' : 'offline';
         item.latency = result.online ? result.latency : null;
         saveAndRender();
@@ -587,9 +624,8 @@
         } catch(e) { alert('❌ 下载失败: '+e.message); }
     }
 
-    // R2 弹窗配置 (修复无法弹出问题)
+    // R2 弹窗配置
     function openR2Settings() {
-        // 预先填充当前值
         document.getElementById('modal_r2_endpoint').value = r2Config.endpoint || '';
         document.getElementById('modal_r2_accessKeyId').value = r2Config.accessKeyId || '';
         document.getElementById('modal_r2_secretAccessKey').value = r2Config.secretAccessKey || '';
@@ -609,7 +645,7 @@
         }
         r2Config = { endpoint, accessKeyId, secretAccessKey, bucket };
         localStorage.setItem('r2_config', JSON.stringify(r2Config));
-        // 同步到主界面的输入框（方便查看）
+        // 同步到主界面输入框
         document.getElementById('r2_endpoint').value = endpoint;
         document.getElementById('r2_accessKeyId').value = accessKeyId;
         document.getElementById('r2_secretAccessKey').value = secretAccessKey;
@@ -618,7 +654,7 @@
         alert('R2 配置已保存');
     }
 
-    // UI 渲染 (含类型下拉)
+    // UI 渲染
     function renderTable() {
         const tbody = document.getElementById('tableBody');
         if(!sources.length) {
@@ -684,7 +720,6 @@
         document.getElementById('overlay').style.display = 'none';
     }
 
-    // 初始化显示已有R2配置
     function initR2Fields() {
         if(r2Config.endpoint) {
             document.getElementById('r2_endpoint').value = r2Config.endpoint;
