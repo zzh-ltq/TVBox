@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>TVBox 状态监测 & R2 同步</title>
+    <!-- 引入 AWS SDK (S3 client) -->
+    <script src="https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.450.0/dist-helper/browser/index.min.js"></script>
+    <style>
+        :root { --bg: #0d1117; --card-bg: #161b22; --border: #30363d; --text: #c9d1d9; --blue: #1f6feb; --green: #238636; }
+        body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        /* 按钮和输入框样式 */
+        .controls, .settings-modal { background: var(--card-bg); padding: 15px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
+        button { padding: 8px 12px; border-radius: 6px; border: none; cursor: pointer; color: #white; font-weight: bold; margin-right: 5px; background: var(--blue); color: white; }
+        input, textarea { background: #010409; border: 1px solid var(--border); color: white; padding: 8px; border-radius: 4px; margin-bottom: 10px; width: 100%; box-sizing: border-box; }
+        
+        /* 设置面板隐现 */
+        #settingsPanel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; width: 400px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 99; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); }
+        .status-online { color: #3fb950; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="controls">
+        <button onclick="toggleSettings()">⚙️ 设置同步</button>
+        <button style="background: var(--green)" onclick="syncToR2()">⬆️ 上传至 R2</button>
+        <button style="background: #8957e5" onclick="syncFromR2()">⬇️ 从 R2 下载</button>
+        <hr style="border: 0.5px solid var(--border); margin: 15px 0;">
+        <textarea id="urlInput" placeholder="手动添加源：每行一个 URL"></textarea>
+        <button onclick="importURLs()">导入</button>
+        <button onclick="checkAll()">检测延迟</button>
+    </div>
+
+    <table id="statusTable">
+        <thead>
+            <tr><th>#</th><th>名称</th><th>链接</th><th>状态/延迟</th></tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+</div>
+
+<!-- 设置模态框 -->
+<div class="overlay" id="overlay" onclick="toggleSettings()"></div>
+<div class="settings-modal" id="settingsPanel">
+    <h3>Cloudflare R2 配置</h3>
+    <input type="text" id="r2_endpoint" placeholder="S3 Endpoint (AccountID.r2.cloudflarestorage.com)">
+    <input type="text" id="r2_accessKeyId" placeholder="Access Key ID">
+    <input type="password" id="r2_secretAccessKey" placeholder="Secret Access Key">
+    <input type="text" id="r2_bucket" placeholder="Bucket Name">
+    <button onclick="saveSettings()">保存配置</button>
+    <button style="background:#444" onclick="toggleSettings()">关闭</button>
+</div>
+
+<script>
+    let sources = JSON.parse(localStorage.getItem('tvbox_sources') || '[]');
+    let r2Config = JSON.parse(localStorage.getItem('r2_config') || '{}');
+
+    function toggleSettings() {
+        const show = document.getElementById('settingsPanel').style.display === 'block';
+        document.getElementById('settingsPanel').style.display = show ? 'none' : 'block';
+        document.getElementById('overlay').style.display = show ? 'none' : 'block';
+        if (!show) loadSettingsToUI();
+    }
+
+    function loadSettingsToUI() {
+        if (r2Config.endpoint) {
+            document.getElementById('r2_endpoint').value = r2Config.endpoint;
+            document.getElementById('r2_accessKeyId').value = r2Config.accessKeyId;
+            document.getElementById('r2_secretAccessKey').value = r2Config.secretAccessKey;
+            document.getElementById('r2_bucket').value = r2Config.bucket;
+        }
+    }
+
+    function saveSettings() {
+        r2Config = {
+            endpoint: document.getElementById('r2_endpoint').value,
+            accessKeyId: document.getElementById('r2_accessKeyId').value,
+            secretAccessKey: document.getElementById('r2_secretAccessKey').value,
+            bucket: document.getElementById('r2_bucket').value,
+        };
+        localStorage.setItem('r2_config', JSON.stringify(r2Config));
+        alert('配置已保存到本地浏览器');
+        toggleSettings();
+    }
+
+    // --- R2 同步核心逻辑 ---
+    async function getS3Client() {
+        if (!r2Config.accessKeyId) { alert('请先配置 R2 信息'); return null; }
+        // 使用 S3 兼容客户端
+        return new s3.S3({
+            endpoint: `https://${r2Config.endpoint}`,
+            region: "auto",
+            credentials: {
+                accessKeyId: r2Config.accessKeyId,
+                secretAccessKey: r2Config.secretAccessKey
+            }
+        });
+    }
+
+    async function syncToR2() {
+        const client = await getS3Client();
+        if (!client) return;
+        try {
+            const data = JSON.stringify(sources);
+            await client.putObject({
+                Bucket: r2Config.bucket,
+                Key: "tvbox_data.json",
+                Body: data,
+                ContentType: "application/json"
+            });
+            alert('数据已成功备份到 R2');
+        } catch (e) {
+            console.error(e);
+            alert('同步失败: ' + e.message);
+        }
+    }
+
+    async function syncFromR2() {
+        const client = await getS3Client();
+        if (!client) return;
+        try {
+            const res = await client.getObject({
+                Bucket: r2Config.bucket,
+                Key: "tvbox_data.json"
+            });
+            const text = await res.Body.transformToString();
+            sources = JSON.parse(text);
+            saveAndRender();
+            alert('同步完成！已加载云端数据');
+        } catch (e) {
+            alert('下载失败，可能文件不存在: ' + e.message);
+        }
+    }
+
+    // --- 原有业务逻辑 ---
+    function importURLs() {
+        const val = document.getElementById('urlInput').value;
+        val.split('\n').forEach(l => {
+            if(l.trim().startsWith('http')) sources.push({name: new URL(l).hostname, url: l.trim(), status: 'wait', latency: null});
+        });
+        saveAndRender();
+    }
+
+    async function checkAll() {
+        for (let s of sources) {
+            s.status = 'checking'; renderTable();
+            const start = Date.now();
+            try {
+                await fetch(s.url, { mode: 'no-cors', cache: 'no-cache' });
+                s.latency = Date.now() - start;
+                s.status = 'online';
+            } catch (e) { s.status = 'offline'; s.latency = 9999; }
+        }
+        sources.sort((a, b) => a.latency - b.latency);
+        saveAndRender();
+    }
+
+    function saveAndRender() {
+        localStorage.setItem('tvbox_sources', JSON.stringify(sources));
+        renderTable();
+    }
+
+    function renderTable() {
+        document.getElementById('tableBody').innerHTML = sources.map((s, i) => `
+            <tr>
+                <td>${i+1}</td>
+                <td>${s.name}</td>
+                <td style="font-size:12px;color:#58a6ff">${s.url}</td>
+                <td class="${s.status === 'online' ? 'status-online' : ''}">
+                    ${s.status === 'online' ? s.latency + 'ms' : (s.status === 'checking' ? '...' : '待测')}
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    renderTable();
+</script>
+</body>
+</html>
