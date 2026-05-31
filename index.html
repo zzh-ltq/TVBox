@@ -154,41 +154,83 @@
         saveAndRender();
     }
 
-    async function checkAll() {
-    // 这里填入你刚刚部署的 Worker 地址
-    const proxyBase = "https://tvbox-proxy.978076732.workers.dev/?url=";
+    // 定义可用的 HTTP 代理列表
+const httpProxies = [
+    "https://corsproxy.io/?",
+    "https://api.allorigins.win/raw?url=",
+    "https://cors.zme.ink/",
+    "https://api.codetabs.com/v1/proxy?quest="
+];
 
+async function checkAll() {
     for (let i = 0; i < sources.length; i++) {
         sources[i].status = 'checking';
         renderTable();
 
-        const start = Date.now();
         const targetUrl = sources[i].url;
-
-        try {
-            let finalUrl = targetUrl;
-            // 如果是 http 接口，则通过 Cloudflare Worker 中转检测
-            if (targetUrl.startsWith('http:')) {
-                finalUrl = proxyBase + encodeURIComponent(targetUrl);
+        const start = Date.now();
+        
+        // 逻辑分流
+        if (targetUrl.startsWith('https:')) {
+            // HTTPS 接口：直接检测
+            sources[i] = await performFetch(sources[i], targetUrl, start);
+        } else {
+            // HTTP 接口：轮询代理检测
+            let success = false;
+            for (let proxy of httpProxies) {
+                const proxyUrl = proxy + encodeURIComponent(targetUrl);
+                console.log(`尝试代理: ${proxy}`);
+                
+                const result = await performFetch(sources[i], proxyUrl, start);
+                if (result.status === 'online') {
+                    sources[i] = result;
+                    success = true;
+                    break; // 如果成功，跳出代理尝试
+                }
             }
-
-            const response = await fetch(finalUrl, { 
-                cache: 'no-cache' 
-            });
-
-            if (response.ok) {
-                sources[i].latency = Date.now() - start;
-                sources[i].status = 'online';
-            } else {
-                throw new Error('Server Error');
+            if (!success) {
+                sources[i].status = 'offline';
+                sources[i].latency = 9999;
             }
-        } catch (e) {
-            sources[i].status = 'offline';
-            sources[i].latency = 9999;
         }
+        renderTable(); // 每测完一个更新一次界面
     }
+    
+    // 全部测完后排序
     sources.sort((a, b) => (a.latency || 10000) - (b.latency || 10000));
     saveAndRender();
+}
+
+/**
+ * 核心请求封装
+ * @param {Object} item 原始数据对象
+ * @param {string} fetchUrl 实际请求的URL (可能是原URL或代理URL)
+ * @param {number} startTime 开始时间戳
+ */
+async function performFetch(item, fetchUrl, startTime) {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6秒超时
+
+        const response = await fetch(fetchUrl, {
+            mode: 'no-cors', // 关键：允许跨域探测
+            cache: 'no-cache',
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        return {
+            ...item,
+            latency: Date.now() - startTime,
+            status: 'online'
+        };
+    } catch (e) {
+        return {
+            ...item,
+            latency: 9999,
+            status: 'offline'
+        };
+    }
 }
 
     // --- R2 同步 (AWS SDK v2 修复版) ---
