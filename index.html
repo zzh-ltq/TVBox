@@ -154,39 +154,42 @@
         saveAndRender();
     }
 
-    // --- 检测逻辑 (优化版) ---
     async function checkAll() {
-        for (let i = 0; i < sources.length; i++) {
-            sources[i].status = 'checking';
-            renderTable();
+    // 这里填入你刚刚部署的 Worker 地址
+    const proxyBase = "https://tvbox-proxy.978076732.workers.dev/?url=";
 
-            const start = Date.now();
-            try {
-                // 设置 5 秒超时
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
+    for (let i = 0; i < sources.length; i++) {
+        sources[i].status = 'checking';
+        renderTable();
 
-                // no-cors 模式可以探测 http 接口的存在，但在 HTTPS 下仍会被浏览器拦截
-                await fetch(sources[i].url, { 
-                    mode: 'no-cors', 
-                    cache: 'no-cache',
-                    signal: controller.signal 
-                });
-                
-                clearTimeout(timeoutId);
+        const start = Date.now();
+        const targetUrl = sources[i].url;
+
+        try {
+            let finalUrl = targetUrl;
+            // 如果是 http 接口，则通过 Cloudflare Worker 中转检测
+            if (targetUrl.startsWith('http:')) {
+                finalUrl = proxyBase + encodeURIComponent(targetUrl);
+            }
+
+            const response = await fetch(finalUrl, { 
+                cache: 'no-cache' 
+            });
+
+            if (response.ok) {
                 sources[i].latency = Date.now() - start;
                 sources[i].status = 'online';
-            } catch (e) {
-                console.warn(`接口 ${sources[i].name} 检测失败:`, e.name);
-                sources[i].status = 'offline';
-                sources[i].latency = 9999;
-                // 继续循环，不中断
+            } else {
+                throw new Error('Server Error');
             }
+        } catch (e) {
+            sources[i].status = 'offline';
+            sources[i].latency = 9999;
         }
-        // 检测完后按延迟排序（在线的排前面）
-        sources.sort((a, b) => (a.latency || 10000) - (b.latency || 10000));
-        saveAndRender();
     }
+    sources.sort((a, b) => (a.latency || 10000) - (b.latency || 10000));
+    saveAndRender();
+}
 
     // --- R2 同步 (AWS SDK v2 修复版) ---
     function getS3() {
