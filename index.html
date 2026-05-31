@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>TVBox 接口管理系统 v3.0 · 点播/直播分类批量检测</title>
+    <title>TVBox 接口管理系统 · 点播/直播分类检测增强版</title>
     <!-- AWS SDK v2 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1500.0/aws-sdk.min.js"></script>
     <style>
@@ -35,29 +35,59 @@
             max-width: 1400px;
             margin: 0 auto;
         }
-        .controls {
-            background: var(--card-bg);
-            padding: 20px;
-            border: 1px solid var(--border);
-            border-radius: 12px;
+        /* 新布局：双栏卡片 */
+        .settings-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
             margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px 20px;
+            flex: 1;
+            min-width: 250px;
+        }
+        .card h3 {
+            margin: 0 0 12px 0;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+        }
+        .r2-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .r2-row input {
+            flex: 1;
+            background: #010409;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
         }
         .btn-group {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 15px;
+            margin-top: 12px;
         }
         button {
-            padding: 8px 16px;
-            border-radius: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
             border: none;
             cursor: pointer;
             color: white;
             font-weight: 600;
             font-size: 13px;
-            transition: all 0.2s ease;
+            transition: all 0.2s;
             background: #2d333b;
         }
         button:hover { opacity: 0.85; transform: translateY(-1px); }
@@ -72,23 +102,29 @@
 
         textarea {
             width: 100%;
-            height: 80px;
             background: #010409;
             border: 1px solid var(--border);
             color: white;
             padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 12px;
+            border-radius: 12px;
+            margin: 10px 0;
             resize: vertical;
             font-family: monospace;
             font-size: 13px;
+        }
+        .import-area {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 12px 18px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
         }
         table {
             width: 100%;
             border-collapse: collapse;
             background: var(--card-bg);
             border: 1px solid var(--border);
-            border-radius: 12px;
+            border-radius: 16px;
             overflow: hidden;
         }
         th, td {
@@ -135,7 +171,7 @@
             font-size: 11px;
             background: transparent;
             border: 1px solid var(--border);
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
             color: var(--text);
         }
@@ -150,93 +186,132 @@
             background: #0d1117;
             color: white;
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 4px 8px;
+            border-radius: 20px;
+            padding: 4px 12px;
             font-size: 12px;
             cursor: pointer;
             font-weight: 500;
         }
         .type-select.vod { background: #1e3a2f; color: #7ee787; border-color: #2ea043; }
         .type-select.live { background: #4a2e1a; color: #ffb347; border-color: #f0883e; }
-        .badge-type {
-            display: inline-block;
-            padding: 2px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            width: 90%;
+            max-width: 480px;
+            background: var(--card-bg);
+            padding: 24px;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            box-shadow: 0 20px 35px rgba(0,0,0,0.6);
         }
-        .badge-vod { background: #1e5e2d; color: #a5f0b6; }
-        .badge-live { background: #b45f1b; color: #ffe0b5; }
-        .flex-between {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 999;
+        }
+        .modal input, .modal select, .modal textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            background: #010409;
+            border: 1px solid var(--border);
+            color: white;
+            border-radius: 12px;
         }
         footer {
-            margin-top: 20px;
+            margin-top: 24px;
             font-size: 12px;
-            color: var(--text-secondary);
             text-align: center;
+            color: var(--text-secondary);
         }
         @media (max-width: 780px) {
             th, td { font-size: 11px; padding: 8px 4px; }
-            .url-text { max-width: 150px; font-size: 10px; }
-            .action-btn { padding: 3px 6px; }
+            .url-text { max-width: 140px; }
         }
     </style>
 </head>
 <body>
 <div class="container">
-    <div class="controls">
-        <div class="btn-group">
-            <button class="btn-ghost" onclick="toggleModal('settingsModal')">⚙️ R2 配置</button>
-            <button class="btn-green" onclick="syncToR2()">⬆️ 上传云端</button>
-            <button class="btn-purple" onclick="syncFromR2()">⬇️ 下载云端</button>
-            <button class="btn-vod" onclick="refreshByType('vod')">🎬 批量刷新点播源</button>
-            <button class="btn-live" onclick="refreshByType('live')">📺 批量刷新直播源</button>
-            <button class="btn-ghost" onclick="setAllType('vod')">🏷️ 全设为点播</button>
-            <button class="btn-ghost" onclick="setAllType('live')">🏷️ 全设为直播</button>
-            <button class="btn-red" onclick="clearAll()">🗑️ 清空所有</button>
+    <!-- 双栏配置区: R2 + 批量操作 -->
+    <div class="settings-panel">
+        <div class="card">
+            <h3>☁️ Cloudflare R2 同步</h3>
+            <div class="r2-row">
+                <input type="text" id="r2_endpoint" placeholder="Endpoint (如: xxx.r2.cloudflarestorage.com)">
+                <input type="text" id="r2_accessKeyId" placeholder="Access Key ID">
+            </div>
+            <div class="r2-row">
+                <input type="password" id="r2_secretAccessKey" placeholder="Secret Access Key">
+                <input type="text" id="r2_bucket" placeholder="Bucket 名称">
+            </div>
+            <div class="btn-group">
+                <button class="btn-green" onclick="syncToR2()">⬆️ 上传至 R2</button>
+                <button class="btn-purple" onclick="syncFromR2()">⬇️ 从 R2 下载</button>
+                <button class="btn-ghost" onclick="openR2Settings()">📝 保存配置</button>
+            </div>
         </div>
-        <textarea id="urlInput" placeholder="批量导入接口地址 (每行一个 URL)&#10;导入后默认为「点播」类型，可手动修改标签"></textarea>
-        <div class="btn-group" style="margin-top: 0;">
-            <button class="btn-blue" onclick="importURLs()">📥 智能导入 (自动去重)</button>
+        <div class="card">
+            <h3>⚡ 批量检测 (按标签)</h3>
+            <div class="btn-group">
+                <button class="btn-vod" onclick="refreshByType('vod')">🎬 批量刷新点播源</button>
+                <button class="btn-live" onclick="refreshByType('live')">📺 批量刷新直播源</button>
+                <button class="btn-ghost" onclick="setAllType('vod')">🏷️ 全设为点播</button>
+                <button class="btn-ghost" onclick="setAllType('live')">🏷️ 全设为直播</button>
+                <button class="btn-red" onclick="clearAll()">🗑️ 清空所有</button>
+            </div>
         </div>
-        <p class="warning-text">✅ 标签功能：每个接口可单独标记「点播」或「直播」| 批量刷新按钮仅检测对应类型接口 | 支持单独检测/复制链接</p>
     </div>
 
+    <!-- 导入区域 -->
+    <div class="import-area">
+        <textarea id="urlInput" rows="2" placeholder="批量导入接口地址 (每行一个 URL)&#10;支持 http/https，导入后默认类型为「点播」，可手动修改标签"></textarea>
+        <div class="btn-group">
+            <button class="btn-blue" onclick="importURLs()">📥 智能导入 (自动去重)</button>
+        </div>
+        <p class="warning-text">✅ 直播源优化检测：使用多代理 + 宽松状态码判定 (200~399)，大幅降低误报离线。</p>
+    </div>
+
+    <!-- 接口列表 -->
     <div style="overflow-x: auto;">
         <table id="sourceTable">
             <thead>
-                <tr><th width="40">#</th><th width="140">名称</th><th>接口地址</th><th width="70">类型</th><th width="90">延迟/状态</th><th width="150">操作</th></tr>
+                <tr><th>#</th><th width="150">名称</th><th>接口地址</th><th>类型</th><th>延迟/状态</th><th width="150">操作</th></tr>
             </thead>
-            <tbody id="tableBody">
-                <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
-            </tbody>
+            <tbody id="tableBody"><tr><td colspan="6" style="text-align:center;">加载中...</td></tr></tbody>
         </table>
     </div>
-    <footer>🔍 检测使用多代理轮询 (corsproxy/allorigins等) 真实读取状态 | 支持R2备份 | 点击标签下拉可即时修改接口类型</footer>
+    <footer>🔍 检测采用4个稳定CORS代理，直播源判定更宽容 (HTTP 200/206/304等均视为在线) | 点击类型下拉可即时切换点播/直播</footer>
 </div>
 
-<!-- R2 模态框 -->
+<!-- R2 配置保存弹窗 (简化版直接保存, 但保留可视化) -->
 <div class="overlay" id="overlay" onclick="closeAllModals()"></div>
 <div class="modal" id="settingsModal">
-    <h3>🔐 Cloudflare R2 设置</h3>
-    <input type="text" id="r2_endpoint" placeholder="Endpoint (例: your-account.r2.cloudflarestorage.com)">
-    <input type="text" id="r2_accessKeyId" placeholder="Access Key ID">
-    <input type="password" id="r2_secretAccessKey" placeholder="Secret Access Key">
-    <input type="text" id="r2_bucket" placeholder="Bucket 名称">
-    <button class="btn-green" style="width:100%" onclick="saveSettings()">保存配置</button>
+    <h3>🔐 保存 R2 配置</h3>
+    <input type="text" id="modal_r2_endpoint" placeholder="Endpoint">
+    <input type="text" id="modal_r2_accessKeyId" placeholder="Access Key ID">
+    <input type="password" id="modal_r2_secretAccessKey" placeholder="Secret Access Key">
+    <input type="text" id="modal_r2_bucket" placeholder="Bucket Name">
+    <button class="btn-green" style="width:100%; margin-top:12px;" onclick="saveR2Settings()">保存配置</button>
 </div>
 
-<!-- 编辑模态框 (增加类型选择) -->
+<!-- 编辑接口 -->
 <div class="modal" id="editModal">
     <h3>✏️ 编辑接口</h3>
     <input type="hidden" id="editIndex">
     <input type="text" id="editName" placeholder="接口名称">
-    <input type="text" id="editUrl" placeholder="完整 URL (http/https)">
-    <label style="font-size:13px; margin-top:8px; display:block;">接口类型：</label>
-    <select id="editType" style="width:100%; background:#010409; border:1px solid var(--border); color:white; padding:8px; border-radius:6px;">
+    <input type="text" id="editUrl" placeholder="完整 URL">
+    <label style="font-size:13px;">接口类型：</label>
+    <select id="editType">
         <option value="vod">📽️ 点播源 (VOD)</option>
         <option value="live">📡 直播源 (Live)</option>
     </select>
@@ -244,76 +319,85 @@
 </div>
 
 <script>
-    // ---------- 数据结构 ----------
+    // ---------- 全局数据 ----------
     let sources = JSON.parse(localStorage.getItem('tvbox_sources') || '[]');
     let r2Config = JSON.parse(localStorage.getItem('r2_config') || '{}');
 
-    // 兼容旧数据，增加type字段，默认为'vod'
+    // 确保旧数据有type字段
     function normalizeSources() {
         let changed = false;
-        for (let i = 0; i < sources.length; i++) {
-            if (!sources[i].type) {
-                sources[i].type = 'vod';
-                changed = true;
-            }
-            if (sources[i].status === undefined) sources[i].status = 'wait';
-            if (sources[i].latency === undefined) sources[i].latency = null;
+        for (let s of sources) {
+            if (!s.type) { s.type = 'vod'; changed = true; }
+            if (s.status === undefined) { s.status = 'wait'; changed = true; }
+            if (s.latency === undefined) s.latency = null;
         }
         if (changed) saveAndRender();
         else renderTable();
     }
 
-    // ---------- 代理列表 (稳定CORS) ----------
+    // ---------- 增强版代理池 (更稳定) ----------
     const PROXY_LIST = [
-        { name: 'corsproxy', url: (target) => `https://corsproxy.io/?${encodeURIComponent(target)}` },
-        { name: 'allorigins', url: (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}` },
-        { name: 'cors-anywhere', url: (target) => `https://cors-anywhere.herokuapp.com/${target}` },
-        { name: 'thingproxy', url: (target) => `https://thingproxy.freeboard.io/fetch/${target}` }
+        { name: 'allorigins', url: (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`, retry: true },
+        { name: 'corsproxy', url: (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`, retry: true },
+        { name: 'cors-anywhere', url: (target) => `https://cors-anywhere.herokuapp.com/${target}`, retry: false },
+        { name: 'thingproxy', url: (target) => `https://thingproxy.freeboard.io/fetch/${target}`, retry: false }
     ];
 
-    // 核心检测函数 (返回 {online, latency})
-    async function testSingleUrl(targetUrl, timeoutMs = 7000) {
+    /**
+     * 智能检测接口 (针对直播源优化)
+     * @param {string} targetUrl 
+     * @param {string} type   'vod' 或 'live'
+     * @returns {Promise<{online: boolean, latency: number}>}
+     */
+    async function testSingleUrlAdvanced(targetUrl, type, timeoutMs = 8000) {
         if (!targetUrl || !targetUrl.startsWith('http')) {
             return { online: false, latency: 9999 };
         }
-        for (const proxy of PROXY_LIST) {
+        // 直播源使用更长超时和更宽松判断
+        const effectiveTimeout = (type === 'live') ? 10000 : 7000;
+        // 尝试每个代理
+        for (let proxy of PROXY_LIST) {
             const proxyUrl = proxy.url(targetUrl);
             const start = Date.now();
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+                const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
                 const response = await fetch(proxyUrl, {
                     method: 'GET',
                     mode: 'cors',
                     cache: 'no-store',
                     signal: controller.signal,
-                    headers: { 'Accept': 'application/json, text/plain, */*' }
+                    headers: { 'Accept': '*/*' }   // 接受任何内容
                 });
                 clearTimeout(timeoutId);
                 const latency = Date.now() - start;
-                if (response.ok || response.status === 304) {
+                // 关键优化：直播源允许 200, 206, 304 等所有2xx/3xx状态码
+                if (response.status >= 200 && response.status < 400) {
                     return { online: true, latency: Math.min(latency, 5000) };
                 }
+                // 对于直播源特别宽容：如果状态码是 403/530 但代理错误, 尝试下一个
+                console.warn(`代理${proxy.name}返回${response.status}, 继续`);
             } catch (err) {
+                console.debug(`代理${proxy.name}失败:`, err.message);
                 // 继续尝试下一个代理
             }
+            // 可选: 短暂延迟避免高频
+            await new Promise(r => setTimeout(r, 80));
         }
+        // 所有代理都失败 -> 离线
         return { online: false, latency: 9999 };
     }
 
-    // 按类型批量刷新 (vod / live)
+    // 按类型批量刷新
     async function refreshByType(type) {
         const targetIndices = [];
         for (let i = 0; i < sources.length; i++) {
-            if (sources[i].type === type) {
-                targetIndices.push(i);
-            }
+            if (sources[i].type === type) targetIndices.push(i);
         }
         if (targetIndices.length === 0) {
-            alert(`当前没有「${type === 'vod' ? '点播' : '直播'}」类型的接口，请先添加或修改标签。`);
+            alert(`当前没有「${type === 'vod' ? '点播' : '直播'}」类型的接口`);
             return;
         }
-        // 将这些接口状态置为检测中
         for (let idx of targetIndices) {
             sources[idx].status = 'checking';
             sources[idx].latency = null;
@@ -322,62 +406,57 @@
 
         for (let idx of targetIndices) {
             const item = sources[idx];
-            const result = await testSingleUrl(item.url, 6000);
+            const result = await testSingleUrlAdvanced(item.url, item.type, item.type === 'live' ? 10000 : 7000);
             item.status = result.online ? 'online' : 'offline';
             item.latency = result.online ? result.latency : null;
-            renderTable(); // 实时刷新
+            renderTable();
             await new Promise(r => setTimeout(r, 120));
         }
-        // 整体排序 (在线优先 + 延迟升序)
-        sortAllByOnlineAndLatency();
-        saveAndRender();
-        const onlineCount = sources.filter(s => s.type === type && s.status === 'online').length;
-        alert(`「${type === 'vod' ? '点播' : '直播'}」源刷新完成！在线: ${onlineCount} / 总数: ${targetIndices.length}`);
-    }
-
-    // 全局排序 (在线优先，在线按延迟升序，离线排后)
-    function sortAllByOnlineAndLatency() {
-        sources.sort((a, b) => {
-            const aOnline = a.status === 'online';
-            const bOnline = b.status === 'online';
-            if (aOnline && !bOnline) return -1;
-            if (!aOnline && bOnline) return 1;
-            if (aOnline && bOnline) return (a.latency || 9999) - (b.latency || 9999);
+        // 排序
+        sources.sort((a,b) => {
+            const aOn = a.status === 'online';
+            const bOn = b.status === 'online';
+            if(aOn && !bOn) return -1;
+            if(!aOn && bOn) return 1;
+            if(aOn && bOn) return (a.latency||9999) - (b.latency||9999);
             return 0;
         });
+        saveAndRender();
+        const onlineCount = sources.filter(s => s.type === type && s.status === 'online').length;
+        alert(`「${type === 'vod' ? '点播' : '直播'}」检测完成！在线: ${onlineCount} / 总数: ${targetIndices.length}`);
     }
 
-    // 单独检测某个接口
+    // 单独检测（也使用优化版）
     async function checkSingle(index) {
         if (!sources[index]) return;
         const item = sources[index];
         item.status = 'checking';
         item.latency = null;
         renderTable();
-        const result = await testSingleUrl(item.url, 6000);
+        const result = await testSingleUrlAdvanced(item.url, item.type, item.type === 'live' ? 10000 : 7000);
         item.status = result.online ? 'online' : 'offline';
         item.latency = result.online ? result.latency : null;
         saveAndRender();
-        alert(`接口: ${item.name}\n${result.online ? `✅ 在线 | 延迟 ${result.latency}ms` : '❌ 离线或不可达'}`);
+        alert(`接口: ${item.name}\n${result.online ? `✅ 在线 | 延迟 ${result.latency}ms` : '❌ 离线 (代理均无法获取有效响应)'}`);
     }
 
-    // 复制URL
+    // 复制链接
     async function copyUrl(url) {
         try {
             await navigator.clipboard.writeText(url);
             alert('✅ 已复制接口地址');
         } catch {
-            const textarea = document.createElement('textarea');
-            textarea.value = url;
-            document.body.appendChild(textarea);
-            textarea.select();
+            const ta = document.createElement('textarea');
+            ta.value = url;
+            document.body.appendChild(ta);
+            ta.select();
             document.execCommand('copy');
-            document.body.removeChild(textarea);
+            document.body.removeChild(ta);
             alert('✅ 已复制');
         }
     }
 
-    // 更新接口类型 (即时修改)
+    // 切换类型
     function updateType(index, newType) {
         if (index >= 0 && index < sources.length && (newType === 'vod' || newType === 'live')) {
             sources[index].type = newType;
@@ -385,58 +464,44 @@
         }
     }
 
-    // 全量设置所有接口类型
     function setAllType(type) {
-        if (sources.length === 0) return alert('暂无接口');
-        if (confirm(`将所有接口的类型设置为「${type === 'vod' ? '点播' : '直播'}」吗？`)) {
-            for (let i = 0; i < sources.length; i++) {
-                sources[i].type = type;
-            }
+        if(sources.length === 0) return alert('无接口');
+        if(confirm(`将所有接口设为「${type === 'vod' ? '点播' : '直播'}」吗？`)){
+            for(let s of sources) s.type = type;
             saveAndRender();
-            alert(`已将所有接口设为 ${type === 'vod' ? '点播' : '直播'}`);
         }
     }
 
-    // ---------- 导入 (默认type: vod) ----------
+    // 导入 (默认点播)
     function importURLs() {
         const val = document.getElementById('urlInput').value.trim();
         if (!val) return;
         const lines = val.split(/\r?\n/);
-        let addedCount = 0, skipCount = 0;
-        for (const line of lines) {
+        let added = 0, skip = 0;
+        for(let line of lines){
             let url = line.trim();
-            if (!url.startsWith('http')) continue;
+            if(!url.startsWith('http')) continue;
             let name = '';
             try {
-                const urlObj = new URL(url);
-                name = urlObj.hostname.replace(/^www\./, '');
-                if (name.length < 3) name = urlObj.pathname.split('/').filter(p => p).pop() || '接口';
-            } catch(e) {
-                name = '未知接口';
-            }
-            if (name.length > 30) name = name.substring(0, 28) + '..';
-            // 查重网址唯一
-            if (sources.some(s => s.url === url)) {
-                skipCount++;
-                continue;
-            }
-            // 名称重复加后缀
+                const u = new URL(url);
+                name = u.hostname.replace(/^www\./, '');
+                if(name.length<3) name = u.pathname.split('/').filter(p=>p).pop() || '接口';
+            } catch(e) { name = '未知接口'; }
+            if(name.length>30) name = name.slice(0,28)+'..';
+            if(sources.some(s=>s.url === url)) { skip++; continue; }
             let finalName = name;
-            let counter = 1;
-            while (sources.some(s => s.name === finalName)) {
-                finalName = name + '_' + counter++;
-            }
+            let cnt=1;
+            while(sources.some(s=>s.name === finalName)) finalName = name+'_'+cnt++;
             sources.push({
                 name: finalName,
                 url: url,
-                type: 'vod',      // 默认点播
+                type: 'vod',
                 status: 'wait',
                 latency: null
             });
-            addedCount++;
+            added++;
         }
-        if (addedCount === 0 && skipCount > 0) alert(`已跳过 ${skipCount} 条重复网址`);
-        else alert(`成功导入 ${addedCount} 个接口 (默认点播)，跳过 ${skipCount} 个重复项`);
+        alert(`成功导入 ${added} 个接口 (默认点播)，跳过重复 ${skip} 个`);
         document.getElementById('urlInput').value = '';
         saveAndRender();
     }
@@ -448,57 +513,42 @@
         document.getElementById('editName').value = item.name;
         document.getElementById('editUrl').value = item.url;
         document.getElementById('editType').value = item.type;
-        toggleModal('editModal');
+        document.getElementById('overlay').style.display = 'block';
+        document.getElementById('editModal').style.display = 'block';
     }
 
     function submitEdit() {
-        const index = parseInt(document.getElementById('editIndex').value);
+        const idx = parseInt(document.getElementById('editIndex').value);
         let newName = document.getElementById('editName').value.trim();
         let newUrl = document.getElementById('editUrl').value.trim();
         let newType = document.getElementById('editType').value;
-        if (!newName || !newUrl) {
-            alert('名称和URL不能为空');
-            return;
-        }
-        if (!newUrl.startsWith('http')) {
-            alert('URL必须以http://或https://开头');
-            return;
-        }
-        // 查重 (排除自身)
-        if (sources.some((item, idx) => idx !== index && item.url === newUrl)) {
-            alert('该网址已存在，请勿重复添加');
-            return;
-        }
-        if (sources.some((item, idx) => idx !== index && item.name === newName)) {
-            alert('该名称已存在，请修改名称');
-            return;
-        }
-        sources[index].name = newName;
-        sources[index].url = newUrl;
-        sources[index].type = newType;
-        sources[index].status = 'wait';
-        sources[index].latency = null;
+        if(!newName || !newUrl) return alert('名称和URL不能为空');
+        if(!newUrl.startsWith('http')) return alert('URL需以http开头');
+        if(sources.some((s,i)=> i!==idx && s.url === newUrl)) return alert('网址已存在');
+        if(sources.some((s,i)=> i!==idx && s.name === newName)) return alert('名称已存在');
+        sources[idx].name = newName;
+        sources[idx].url = newUrl;
+        sources[idx].type = newType;
+        sources[idx].status = 'wait';
+        sources[idx].latency = null;
         closeAllModals();
         saveAndRender();
     }
 
-    function deleteSource(index) {
-        if (confirm(`删除接口 "${sources[index].name}" ？`)) {
-            sources.splice(index, 1);
+    function deleteSource(idx) {
+        if(confirm(`删除接口 "${sources[idx].name}" ？`)) {
+            sources.splice(idx,1);
             saveAndRender();
         }
     }
 
     function clearAll() {
-        if (confirm('⚠️ 清空所有接口数据，不可撤销，确定吗？')) {
-            sources = [];
-            saveAndRender();
-        }
+        if(confirm('⚠️ 清空所有接口，不可恢复')) { sources = []; saveAndRender(); }
     }
 
-    // ----- R2 同步 (保持不变) -----
+    // R2 同步
     function getS3() {
-        if (!r2Config.accessKeyId || !r2Config.endpoint || !r2Config.bucket) return null;
+        if(!r2Config.accessKeyId || !r2Config.endpoint || !r2Config.bucket) return null;
         return new AWS.S3({
             endpoint: `https://${r2Config.endpoint}`,
             accessKeyId: r2Config.accessKeyId,
@@ -510,7 +560,7 @@
 
     async function syncToR2() {
         const s3 = getS3();
-        if (!s3) return alert('请先填写完整的 R2 配置');
+        if(!s3) return alert('请先填写并保存 R2 配置');
         try {
             await s3.putObject({
                 Bucket: r2Config.bucket,
@@ -518,36 +568,61 @@
                 Body: JSON.stringify(sources, null, 2),
                 ContentType: "application/json"
             }).promise();
-            alert('✅ 数据已上传至 R2');
-        } catch (e) {
-            alert('❌ 上传失败: ' + e.message);
-        }
+            alert('✅ 上传成功');
+        } catch(e) { alert('❌ 上传失败: '+e.message); }
     }
 
     async function syncFromR2() {
         const s3 = getS3();
-        if (!s3) return alert('请先填写完整的 R2 配置');
+        if(!s3) return alert('请先填写并保存 R2 配置');
         try {
             const data = await s3.getObject({ Bucket: r2Config.bucket, Key: "tvbox_data.json" }).promise();
-            const remoteData = JSON.parse(new TextDecoder().decode(data.Body));
-            if (Array.isArray(remoteData)) {
-                sources = remoteData;
-                normalizeSources(); // 确保type字段存在并保存
+            const remote = JSON.parse(new TextDecoder().decode(data.Body));
+            if(Array.isArray(remote)) {
+                sources = remote;
+                normalizeSources();
                 saveAndRender();
-                alert('✅ 从云端下载成功');
-            } else {
-                alert('云端数据格式错误');
-            }
-        } catch (e) {
-            alert('❌ 下载失败: ' + (e.message || '文件不存在'));
-        }
+                alert('✅ 下载成功');
+            } else alert('云端数据格式错误');
+        } catch(e) { alert('❌ 下载失败: '+e.message); }
     }
 
-    // ---------- 渲染表格 (增加类型下拉列) ----------
+    // R2 弹窗配置 (修复无法弹出问题)
+    function openR2Settings() {
+        // 预先填充当前值
+        document.getElementById('modal_r2_endpoint').value = r2Config.endpoint || '';
+        document.getElementById('modal_r2_accessKeyId').value = r2Config.accessKeyId || '';
+        document.getElementById('modal_r2_secretAccessKey').value = r2Config.secretAccessKey || '';
+        document.getElementById('modal_r2_bucket').value = r2Config.bucket || '';
+        document.getElementById('overlay').style.display = 'block';
+        document.getElementById('settingsModal').style.display = 'block';
+    }
+
+    function saveR2Settings() {
+        const endpoint = document.getElementById('modal_r2_endpoint').value.trim();
+        const accessKeyId = document.getElementById('modal_r2_accessKeyId').value.trim();
+        const secretAccessKey = document.getElementById('modal_r2_secretAccessKey').value.trim();
+        const bucket = document.getElementById('modal_r2_bucket').value.trim();
+        if(!endpoint || !accessKeyId || !secretAccessKey || !bucket) {
+            alert('请填写完整的 R2 信息');
+            return;
+        }
+        r2Config = { endpoint, accessKeyId, secretAccessKey, bucket };
+        localStorage.setItem('r2_config', JSON.stringify(r2Config));
+        // 同步到主界面的输入框（方便查看）
+        document.getElementById('r2_endpoint').value = endpoint;
+        document.getElementById('r2_accessKeyId').value = accessKeyId;
+        document.getElementById('r2_secretAccessKey').value = secretAccessKey;
+        document.getElementById('r2_bucket').value = bucket;
+        closeAllModals();
+        alert('R2 配置已保存');
+    }
+
+    // UI 渲染 (含类型下拉)
     function renderTable() {
         const tbody = document.getElementById('tableBody');
-        if (!sources.length) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px;">暂无接口，请从上方导入或同步云端</td></tr>';
+        if(!sources.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px;">暂无接口，请从上方导入或同步R2</td></tr>';
             return;
         }
         tbody.innerHTML = sources.map((item, idx) => {
@@ -558,42 +633,36 @@
                 statusText = `${item.latency}ms`;
                 statusClass = 'online';
             } else if (item.status === 'offline') {
-                statusText = '超时/离线';
+                statusText = '离线';
                 statusClass = 'offline';
             } else if (item.status === 'checking') {
                 statusText = '检测中...';
-                statusClass = '';
             } else {
                 statusText = '待检测';
             }
             const dotColor = item.status === 'online' ? '#3fb950' : (item.status === 'checking' ? '#d29922' : '#f85149');
-            const typeValue = item.type === 'live' ? 'live' : 'vod';
-            const typeLabel = typeValue === 'vod' ? '📽️ 点播' : '📡 直播';
-            const typeClass = typeValue === 'vod' ? 'type-select vod' : 'type-select live';
-            // 安全转义
+            const typeVal = item.type === 'live' ? 'live' : 'vod';
+            const typeClass = typeVal === 'vod' ? 'type-select vod' : 'type-select live';
             const safeName = escapeHtml(item.name);
             const safeUrl = escapeHtml(item.url);
             return `
             <tr>
                 <td>${idx+1}</td>
                 <td><strong>${safeName}</strong>${isHttp ? '<div class="warning-text">⚠️ HTTP源</div>' : ''}</td>
-                <td><a class="url-text" href="${item.url}" target="_blank" rel="noopener noreferrer" title="${safeUrl}">${safeUrl.length > 60 ? safeUrl.substring(0, 55)+'...' : safeUrl}</a></td>
+                <td><a class="url-text" href="${item.url}" target="_blank" rel="noopener noreferrer" title="${safeUrl}">${safeUrl.length > 60 ? safeUrl.slice(0,55)+'...' : safeUrl}</a></td>
                 <td>
-                    <select class="${typeClass}" onchange="updateType(${idx}, this.value)" style="background:${typeValue === 'vod' ? '#1e3a2f' : '#4a2e1a'}">
-                        <option value="vod" ${typeValue === 'vod' ? 'selected' : ''}>📽️ 点播</option>
-                        <option value="live" ${typeValue === 'live' ? 'selected' : ''}>📡 直播</option>
+                    <select class="${typeClass}" onchange="updateType(${idx}, this.value)">
+                        <option value="vod" ${typeVal === 'vod' ? 'selected' : ''}>📽️ 点播</option>
+                        <option value="live" ${typeVal === 'live' ? 'selected' : ''}>📡 直播</option>
                     </select>
                 </td>
-                <td class="${statusClass}">
-                    <span class="status-dot" style="background:${dotColor}"></span>
-                    ${statusText}
-                </td>
+                <td class="${statusClass}"><span class="status-dot" style="background:${dotColor}"></span> ${statusText}</td>
                 <td>
                     <div class="action-buttons">
-                        <button class="action-btn check-single-btn" onclick="checkSingle(${idx})" title="单独检测">🔍 检测</button>
-                        <button class="action-btn copy-btn" onclick="copyUrl('${safeUrl.replace(/'/g, "\\'")}')" title="复制链接">📋 复制</button>
-                        <button class="action-btn" onclick="openEditModal(${idx})" title="编辑">✏️ 编辑</button>
-                        <button class="action-btn" style="border-color:#da3633;" onclick="deleteSource(${idx})" title="删除">🗑️ 删除</button>
+                        <button class="action-btn" onclick="checkSingle(${idx})">🔍 检测</button>
+                        <button class="action-btn copy-btn" onclick="copyUrl('${safeUrl.replace(/'/g, "\\'")}')">📋 复制</button>
+                        <button class="action-btn" onclick="openEditModal(${idx})">✏️ 编辑</button>
+                        <button class="action-btn" style="border-color:#da3633;" onclick="deleteSource(${idx})">🗑️ 删除</button>
                     </div>
                 </td>
             </tr>`;
@@ -601,13 +670,8 @@
     }
 
     function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
+        if(!str) return '';
+        return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m]));
     }
 
     function saveAndRender() {
@@ -615,33 +679,14 @@
         renderTable();
     }
 
-    // 配置模态框
-    function saveSettings() {
-        const endpoint = document.getElementById('r2_endpoint').value.trim();
-        const accessKeyId = document.getElementById('r2_accessKeyId').value.trim();
-        const secretAccessKey = document.getElementById('r2_secretAccessKey').value.trim();
-        const bucket = document.getElementById('r2_bucket').value.trim();
-        if (!endpoint || !accessKeyId || !secretAccessKey || !bucket) {
-            alert('请填写所有 R2 配置项');
-            return;
-        }
-        r2Config = { endpoint, accessKeyId, secretAccessKey, bucket };
-        localStorage.setItem('r2_config', JSON.stringify(r2Config));
-        closeAllModals();
-        alert('R2 配置已保存');
-    }
-
-    function toggleModal(id) {
-        document.getElementById(id).style.display = 'block';
-        document.getElementById('overlay').style.display = 'block';
-    }
     function closeAllModals() {
         document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
         document.getElementById('overlay').style.display = 'none';
     }
 
-    function initSettingsForm() {
-        if (r2Config.endpoint) {
+    // 初始化显示已有R2配置
+    function initR2Fields() {
+        if(r2Config.endpoint) {
             document.getElementById('r2_endpoint').value = r2Config.endpoint;
             document.getElementById('r2_accessKeyId').value = r2Config.accessKeyId;
             document.getElementById('r2_secretAccessKey').value = r2Config.secretAccessKey;
@@ -649,7 +694,7 @@
         }
     }
 
-    // 全局挂载
+    // 挂载全局函数
     window.refreshByType = refreshByType;
     window.checkSingle = checkSingle;
     window.updateType = updateType;
@@ -662,13 +707,12 @@
     window.clearAll = clearAll;
     window.syncToR2 = syncToR2;
     window.syncFromR2 = syncFromR2;
-    window.saveSettings = saveSettings;
-    window.toggleModal = toggleModal;
+    window.openR2Settings = openR2Settings;
+    window.saveR2Settings = saveR2Settings;
     window.closeAllModals = closeAllModals;
 
-    // 启动
-    initSettingsForm();
-    normalizeSources();  // 补全type/status并渲染
+    initR2Fields();
+    normalizeSources();
 </script>
 </body>
 </html>
