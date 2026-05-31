@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TVBox 接口管理系统</title>
-    <!-- AWS SDK for R2 Sync -->
-    <script src="https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.450.0/dist-helper/browser/index.min.js"></script>
+    <!-- 使用更稳定的 AWS SDK v2 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1500.0/aws-sdk.min.js"></script>
     <style>
         :root { --bg: #0d1117; --card-bg: #161b22; --border: #30363d; --text: #c9d1d9; --blue: #1f6feb; --green: #238636; --red: #da3633; --yellow: #d29922; }
         body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; margin: 0; padding: 20px; }
@@ -195,34 +195,65 @@
         closeAllModals();
     }
 
-    async function syncToR2() {
-        if(!r2Config.accessKeyId) return alert('请先配置 R2');
-        try {
-            const s3Client = new s3.S3({
-                endpoint: `https://${r2Config.endpoint}`,
-                region: "auto",
-                credentials: { accessKeyId: r2Config.accessKeyId, secretAccessKey: r2Config.secretAccessKey }
-            });
-            await s3Client.putObject({ Bucket: r2Config.bucket, Key: "tvbox_data.json", Body: JSON.stringify(sources), ContentType: "application/json" });
-            alert('云端同步成功！');
-        } catch (e) { alert('同步失败: ' + e.message); }
+
+    // --- 修复后的 R2 存储同步逻辑 ---
+function getS3Instance() {
+    if (!r2Config.accessKeyId || !r2Config.secretAccessKey || !r2Config.endpoint || !r2Config.bucket) {
+        alert('请先完整填写 R2 配置信息！');
+        return null;
     }
 
-    async function syncFromR2() {
-        if(!r2Config.accessKeyId) return alert('请先配置 R2');
-        try {
-            const s3Client = new s3.S3({
-                endpoint: `https://${r2Config.endpoint}`,
-                region: "auto",
-                credentials: { accessKeyId: r2Config.accessKeyId, secretAccessKey: r2Config.secretAccessKey }
-            });
-            const res = await s3Client.getObject({ Bucket: r2Config.bucket, Key: "tvbox_data.json" });
-            const text = await res.Body.transformToString();
-            sources = JSON.parse(text);
-            saveAndRender();
-            alert('云端数据下载成功！');
-        } catch (e) { alert('获取云端数据失败'); }
+    // 初始化 S3 客户端
+    return new AWS.S3({
+        endpoint: 'https://' + r2Config.endpoint,
+        accessKeyId: r2Config.accessKeyId,
+        secretAccessKey: r2Config.secretAccessKey,
+        signatureVersion: 'v4',
+        region: 'auto' // R2 必须设置为 auto
+    });
+}
+
+async function syncToR2() {
+    const s3 = getS3Instance();
+    if (!s3) return;
+
+    const params = {
+        Bucket: r2Config.bucket,
+        Key: "tvbox_data.json",
+        Body: JSON.stringify(sources),
+        ContentType: "application/json"
+    };
+
+    try {
+        await s3.putObject(params).promise();
+        alert('✅ 数据已成功同步至云端 R2');
+    } catch (e) {
+        console.error(e);
+        alert('❌ 同步失败: ' + e.message);
     }
+}
+
+async function syncFromR2() {
+    const s3 = getS3Instance();
+    if (!s3) return;
+
+    const params = {
+        Bucket: r2Config.bucket,
+        Key: "tvbox_data.json"
+    };
+
+    try {
+        const data = await s3.getObject(params).promise();
+        // 将获取到的 Body（通常是 Uint8Array）转为字符串
+        const text = new TextDecoder("utf-8").decode(data.Body);
+        sources = JSON.parse(text);
+        saveAndRender();
+        alert('✅ 云端数据下载并加载成功！');
+    } catch (e) {
+        console.error(e);
+        alert('❌ 获取失败: ' + e.message + '\n请确认桶内是否存在 tvbox_data.json 文件');
+    }
+}
 
     // --- 数据渲染 ---
     function saveAndRender() {
