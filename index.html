@@ -2,81 +2,187 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>TVBox 状态监测 & R2 同步</title>
-    <!-- 引入 AWS SDK (S3 client) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TVBox 接口管理系统</title>
+    <!-- AWS SDK for R2 Sync -->
     <script src="https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.450.0/dist-helper/browser/index.min.js"></script>
     <style>
-        :root { --bg: #0d1117; --card-bg: #161b22; --border: #30363d; --text: #c9d1d9; --blue: #1f6feb; --green: #238636; }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; }
+        :root { --bg: #0d1117; --card-bg: #161b22; --border: #30363d; --text: #c9d1d9; --blue: #1f6feb; --green: #238636; --red: #da3633; --yellow: #d29922; }
+        body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 1100px; margin: 0 auto; }
         
-        /* 按钮和输入框样式 */
-        .controls, .settings-modal { background: var(--card-bg); padding: 15px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
-        button { padding: 8px 12px; border-radius: 6px; border: none; cursor: pointer; color: #white; font-weight: bold; margin-right: 5px; background: var(--blue); color: white; }
-        input, textarea { background: #010409; border: 1px solid var(--border); color: white; padding: 8px; border-radius: 4px; margin-bottom: 10px; width: 100%; box-sizing: border-box; }
+        /* 顶部控制栏 */
+        .controls { background: var(--card-bg); padding: 20px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+        button { padding: 8px 14px; border-radius: 6px; border: none; cursor: pointer; color: white; font-weight: 600; font-size: 13px; transition: 0.2s; }
+        button:hover { opacity: 0.8; }
         
-        /* 设置面板隐现 */
-        #settingsPanel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; width: 400px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        .overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 99; }
+        .btn-blue { background: var(--blue); }
+        .btn-green { background: var(--green); }
+        .btn-red { background: var(--red); }
+        .btn-yellow { background: var(--yellow); }
+        .btn-ghost { background: transparent; border: 1px solid var(--border); color: #8b949e; }
 
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); }
-        .status-online { color: #3fb950; }
+        textarea { width: 100%; height: 60px; background: #010409; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; margin-bottom: 10px; resize: vertical; }
+
+        /* 表格样式 */
+        table { width: 100%; border-collapse: collapse; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 14px; }
+        th { background: #1f242c; color: #8b949e; }
+        .url-text { color: #58a6ff; font-size: 12px; word-break: break-all; text-decoration: none; }
+        
+        /* 状态标识 */
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+        .online { color: #3fb950; }
+        .offline { color: #f85149; }
+
+        /* 弹窗样式 (设置 & 编辑) */
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; width: 90%; max-width: 450px; background: var(--card-bg); padding: 20px; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 99; }
+        .modal input { width: 100%; padding: 10px; margin: 10px 0; background: #010409; border: 1px solid var(--border); color: white; border-radius: 6px; box-sizing: border-box; }
+        .modal h3 { margin-top: 0; font-size: 18px; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="controls">
-        <button onclick="toggleSettings()">⚙️ 设置同步</button>
-        <button style="background: var(--green)" onclick="syncToR2()">⬆️ 上传至 R2</button>
-        <button style="background: #8957e5" onclick="syncFromR2()">⬇️ 从 R2 下载</button>
-        <hr style="border: 0.5px solid var(--border); margin: 15px 0;">
-        <textarea id="urlInput" placeholder="手动添加源：每行一个 URL"></textarea>
-        <button onclick="importURLs()">导入</button>
-        <button onclick="checkAll()">检测延迟</button>
+        <div class="btn-group">
+            <button class="btn-ghost" onclick="toggleModal('settingsModal')">⚙️ R2 设置</button>
+            <button class="btn-green" onclick="syncToR2()">⬆️ 上传云端</button>
+            <button style="background:#8957e5" onclick="syncFromR2()">⬇️ 下载云端</button>
+            <button class="btn-yellow" onclick="checkAll()">⚡ 开始检测</button>
+            <button class="btn-red" onclick="clearAll()">🗑️ 清空列表</button>
+        </div>
+        <textarea id="urlInput" placeholder="批量导入接口：每行一个 URL"></textarea>
+        <button class="btn-blue" onclick="importURLs()">批量导入</button>
     </div>
 
-    <table id="statusTable">
+    <table id="sourceTable">
         <thead>
-            <tr><th>#</th><th>名称</th><th>链接</th><th>状态/延迟</th></tr>
+            <tr>
+                <th width="40">#</th>
+                <th width="150">名称</th>
+                <th>接口地址</th>
+                <th width="100">延迟</th>
+                <th width="120">操作</th>
+            </tr>
         </thead>
         <tbody id="tableBody"></tbody>
     </table>
 </div>
 
-<!-- 设置模态框 -->
-<div class="overlay" id="overlay" onclick="toggleSettings()"></div>
-<div class="settings-modal" id="settingsPanel">
-    <h3>Cloudflare R2 配置</h3>
-    <input type="text" id="r2_endpoint" placeholder="S3 Endpoint (AccountID.r2.cloudflarestorage.com)">
+<!-- R2 配置弹窗 -->
+<div class="overlay" id="overlay" onclick="closeAllModals()"></div>
+<div class="modal" id="settingsModal">
+    <h3>Cloudflare R2 设置</h3>
+    <input type="text" id="r2_endpoint" placeholder="Endpoint (AccountID.r2.cloudflarestorage.com)">
     <input type="text" id="r2_accessKeyId" placeholder="Access Key ID">
     <input type="password" id="r2_secretAccessKey" placeholder="Secret Access Key">
     <input type="text" id="r2_bucket" placeholder="Bucket Name">
-    <button onclick="saveSettings()">保存配置</button>
-    <button style="background:#444" onclick="toggleSettings()">关闭</button>
+    <button class="btn-blue" style="width:100%" onclick="saveSettings()">保存配置</button>
+</div>
+
+<!-- 编辑接口弹窗 -->
+<div class="modal" id="editModal">
+    <h3>编辑接口信息</h3>
+    <input type="hidden" id="editIndex">
+    <label>接口名称:</label>
+    <input type="text" id="editName">
+    <label>接口地址:</label>
+    <input type="text" id="editUrl">
+    <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn-green" style="flex:1" onclick="submitEdit()">确认修改</button>
+        <button class="btn-ghost" style="flex:1" onclick="toggleModal('editModal')">取消</button>
+    </div>
 </div>
 
 <script>
     let sources = JSON.parse(localStorage.getItem('tvbox_sources') || '[]');
     let r2Config = JSON.parse(localStorage.getItem('r2_config') || '{}');
 
-    function toggleSettings() {
-        const show = document.getElementById('settingsPanel').style.display === 'block';
-        document.getElementById('settingsPanel').style.display = show ? 'none' : 'block';
-        document.getElementById('overlay').style.display = show ? 'none' : 'block';
-        if (!show) loadSettingsToUI();
+    // --- 基础 UI 控制 ---
+    function toggleModal(id) {
+        const modal = document.getElementById(id);
+        const overlay = document.getElementById('overlay');
+        const isShow = modal.style.display === 'block';
+        modal.style.display = isShow ? 'none' : 'block';
+        overlay.style.display = isShow ? 'none' : 'block';
     }
 
-    function loadSettingsToUI() {
-        if (r2Config.endpoint) {
-            document.getElementById('r2_endpoint').value = r2Config.endpoint;
-            document.getElementById('r2_accessKeyId').value = r2Config.accessKeyId;
-            document.getElementById('r2_secretAccessKey').value = r2Config.secretAccessKey;
-            document.getElementById('r2_bucket').value = r2Config.bucket;
+    function closeAllModals() {
+        document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+        document.getElementById('overlay').style.display = 'none';
+    }
+
+    // --- 接口操作功能 ---
+    function importURLs() {
+        const val = document.getElementById('urlInput').value;
+        val.split('\n').forEach(line => {
+            const url = line.trim();
+            if(url.startsWith('http')) {
+                sources.push({
+                    name: new URL(url).hostname,
+                    url: url,
+                    status: 'wait',
+                    latency: null
+                });
+            }
+        });
+        document.getElementById('urlInput').value = '';
+        saveAndRender();
+    }
+
+    function deleteSource(index) {
+        if(confirm('确定要删除这个接口吗？')) {
+            sources.splice(index, 1);
+            saveAndRender();
         }
     }
 
+    function openEditModal(index) {
+        const item = sources[index];
+        document.getElementById('editIndex').value = index;
+        document.getElementById('editName').value = item.name;
+        document.getElementById('editUrl').value = item.url;
+        toggleModal('editModal');
+    }
+
+    function submitEdit() {
+        const index = document.getElementById('editIndex').value;
+        sources[index].name = document.getElementById('editName').value;
+        sources[index].url = document.getElementById('editUrl').value;
+        closeAllModals();
+        saveAndRender();
+    }
+
+    function clearAll() {
+        if(confirm('确定清空所有接口吗？')) {
+            sources = [];
+            saveAndRender();
+        }
+    }
+
+    // --- 延迟检测逻辑 ---
+    async function checkAll() {
+        for (let i = 0; i < sources.length; i++) {
+            sources[i].status = 'checking';
+            renderTable();
+            const start = Date.now();
+            try {
+                await fetch(sources[i].url, { mode: 'no-cors', cache: 'no-cache' });
+                sources[i].latency = Date.now() - start;
+                sources[i].status = 'online';
+            } catch (e) {
+                sources[i].status = 'offline';
+                sources[i].latency = 9999;
+            }
+        }
+        sources.sort((a, b) => (a.latency || 9999) - (b.latency || 9999));
+        saveAndRender();
+    }
+
+    // --- R2 存储同步逻辑 ---
     function saveSettings() {
         r2Config = {
             endpoint: document.getElementById('r2_endpoint').value,
@@ -85,101 +191,73 @@
             bucket: document.getElementById('r2_bucket').value,
         };
         localStorage.setItem('r2_config', JSON.stringify(r2Config));
-        alert('配置已保存到本地浏览器');
-        toggleSettings();
-    }
-
-    // --- R2 同步核心逻辑 ---
-    async function getS3Client() {
-        if (!r2Config.accessKeyId) { alert('请先配置 R2 信息'); return null; }
-        // 使用 S3 兼容客户端
-        return new s3.S3({
-            endpoint: `https://${r2Config.endpoint}`,
-            region: "auto",
-            credentials: {
-                accessKeyId: r2Config.accessKeyId,
-                secretAccessKey: r2Config.secretAccessKey
-            }
-        });
+        alert('配置已保存');
+        closeAllModals();
     }
 
     async function syncToR2() {
-        const client = await getS3Client();
-        if (!client) return;
+        if(!r2Config.accessKeyId) return alert('请先配置 R2');
         try {
-            const data = JSON.stringify(sources);
-            await client.putObject({
-                Bucket: r2Config.bucket,
-                Key: "tvbox_data.json",
-                Body: data,
-                ContentType: "application/json"
+            const s3Client = new s3.S3({
+                endpoint: `https://${r2Config.endpoint}`,
+                region: "auto",
+                credentials: { accessKeyId: r2Config.accessKeyId, secretAccessKey: r2Config.secretAccessKey }
             });
-            alert('数据已成功备份到 R2');
-        } catch (e) {
-            console.error(e);
-            alert('同步失败: ' + e.message);
-        }
+            await s3Client.putObject({ Bucket: r2Config.bucket, Key: "tvbox_data.json", Body: JSON.stringify(sources), ContentType: "application/json" });
+            alert('云端同步成功！');
+        } catch (e) { alert('同步失败: ' + e.message); }
     }
 
     async function syncFromR2() {
-        const client = await getS3Client();
-        if (!client) return;
+        if(!r2Config.accessKeyId) return alert('请先配置 R2');
         try {
-            const res = await client.getObject({
-                Bucket: r2Config.bucket,
-                Key: "tvbox_data.json"
+            const s3Client = new s3.S3({
+                endpoint: `https://${r2Config.endpoint}`,
+                region: "auto",
+                credentials: { accessKeyId: r2Config.accessKeyId, secretAccessKey: r2Config.secretAccessKey }
             });
+            const res = await s3Client.getObject({ Bucket: r2Config.bucket, Key: "tvbox_data.json" });
             const text = await res.Body.transformToString();
             sources = JSON.parse(text);
             saveAndRender();
-            alert('同步完成！已加载云端数据');
-        } catch (e) {
-            alert('下载失败，可能文件不存在: ' + e.message);
-        }
+            alert('云端数据下载成功！');
+        } catch (e) { alert('获取云端数据失败'); }
     }
 
-    // --- 原有业务逻辑 ---
-    function importURLs() {
-        const val = document.getElementById('urlInput').value;
-        val.split('\n').forEach(l => {
-            if(l.trim().startsWith('http')) sources.push({name: new URL(l).hostname, url: l.trim(), status: 'wait', latency: null});
-        });
-        saveAndRender();
-    }
-
-    async function checkAll() {
-        for (let s of sources) {
-            s.status = 'checking'; renderTable();
-            const start = Date.now();
-            try {
-                await fetch(s.url, { mode: 'no-cors', cache: 'no-cache' });
-                s.latency = Date.now() - start;
-                s.status = 'online';
-            } catch (e) { s.status = 'offline'; s.latency = 9999; }
-        }
-        sources.sort((a, b) => a.latency - b.latency);
-        saveAndRender();
-    }
-
+    // --- 数据渲染 ---
     function saveAndRender() {
         localStorage.setItem('tvbox_sources', JSON.stringify(sources));
         renderTable();
     }
 
     function renderTable() {
-        document.getElementById('tableBody').innerHTML = sources.map((s, i) => `
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = sources.map((item, index) => `
             <tr>
-                <td>${i+1}</td>
-                <td>${s.name}</td>
-                <td style="font-size:12px;color:#58a6ff">${s.url}</td>
-                <td class="${s.status === 'online' ? 'status-online' : ''}">
-                    ${s.status === 'online' ? s.latency + 'ms' : (s.status === 'checking' ? '...' : '待测')}
+                <td>${index + 1}</td>
+                <td><strong>${item.name}</strong></td>
+                <td><a class="url-text" href="${item.url}" target="_blank">${item.url}</a></td>
+                <td class="${item.status === 'online' ? 'online' : 'offline'}">
+                    <span class="status-dot" style="background:${item.status==='online'?'#3fb950':(item.status==='checking'?'#d29922':'#f85149')}"></span>
+                    ${item.status === 'online' ? item.latency + 'ms' : (item.status==='checking'?'...':'超时')}
+                </td>
+                <td>
+                    <button class="btn-ghost" style="padding:4px 8px; color:#58a6ff" onclick="openEditModal(${index})">编辑</button>
+                    <button class="btn-ghost" style="padding:4px 8px; color:#f85149" onclick="deleteSource(${index})">删除</button>
                 </td>
             </tr>
         `).join('');
     }
 
+    // 初始化加载 R2 配置到 UI
+    if(r2Config.endpoint) {
+        document.getElementById('r2_endpoint').value = r2Config.endpoint;
+        document.getElementById('r2_accessKeyId').value = r2Config.accessKeyId;
+        document.getElementById('r2_secretAccessKey').value = r2Config.secretAccessKey;
+        document.getElementById('r2_bucket').value = r2Config.bucket;
+    }
     renderTable();
 </script>
+
 </body>
 </html>
